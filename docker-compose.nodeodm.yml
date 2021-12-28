@@ -10,7 +10,7 @@ services:
     environment:
       - WO_DEFAULT_NODES
   node-odm:
-    image: 65ae3230380e #opendronemap/nodeodm
+    image: 8065ea9988b0 #opendronemap/nodeodm | 12/3/2021 built
     ports:
       - "3000"
     restart: unless-stopped
