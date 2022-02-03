@@ -137,7 +137,9 @@ def lookup_formula(algo, band_order = 'RGB'):
     if algo not in algos:
         raise ValueError("Cannot find algorithm " + algo)
 
-    input_bands = tuple(band_order)
+    # input_bands = tuple(band_order)
+    pattern = re.compile("([A-Z]+?[a-z]*)")
+    input_bands = tuple(re.findall(pattern, band_order))
 
     def repl(matches):
         b = matches.group(1)
