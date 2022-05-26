@@ -326,7 +326,8 @@ REST_FRAMEWORK = {
 }
 
 JWT_AUTH = {
-    'JWT_EXPIRATION_DELTA': datetime.timedelta(hours=6),
+    'JWT_VERIFY_EXPIRATION': False,
+    # 'JWT_EXPIRATION_DELTA': datetime.timedelta(hours=6),
 }
 
 # Compressor
