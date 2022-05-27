@@ -1,5 +1,6 @@
 import json
 import numpy
+import re
 import rio_tiler.utils
 from rasterio.enums import ColorInterp
 from rasterio.crs import CRS
@@ -322,10 +323,15 @@ class Tiles(TaskNestedView):
         if color_map == '': color_map = None
         if hillshade == '' or hillshade == '0': hillshade = None
 
+        pattern = re.compile("([A-Z]+?[a-z]*)")
+        input_bands = tuple(re.findall(pattern, bands))
+
         try:
             expr, _discard_ = lookup_formula(formula, bands)
         except ValueError as e:
-            raise exceptions.ValidationError(str(e))
+            # raise exceptions.ValidationError(str(e))
+            expr = None
+            pass
 
         if tile_type in ['dsm', 'dtm'] and rescale is None:
             rescale = "0,1000"
@@ -367,18 +373,26 @@ class Tiles(TaskNestedView):
             # Handle N-bands datasets for orthophotos (not plant health)
             if tile_type == 'orthophoto' and expr is None:
                 ci = src.dataset.colorinterp
+                indexes = (1, 2, 3,)
+
                 # More than 4 bands?
                 if len(ci) > 4:
                     # Try to find RGBA band order
-                    if ColorInterp.red in ci and \
+                    if formula is None and \
+                            ColorInterp.red in ci and \
                             ColorInterp.green in ci and \
                             ColorInterp.blue in ci:
                         indexes = (ci.index(ColorInterp.red) + 1,
                                    ci.index(ColorInterp.green) + 1,
                                    ci.index(ColorInterp.blue) + 1,)
-                    else:
-                        # Fallback to first three
-                        indexes = (1, 2, 3,)
+                    elif 'Falsecolor' in formula and \
+                            len(formula.split('_')) >= 2: # ex. Falsecolor_NRG
+                        false_color_bands = tuple(re.findall(pattern, formula.split('_')[1]))
+                        if len(false_color_bands) == 3:
+                            indexes = (input_bands.index(false_color_bands[0]) + 1,
+                                       input_bands.index(false_color_bands[1]) + 1,
+                                       input_bands.index(false_color_bands[2]) + 1,)
+
                 elif has_alpha:
                     indexes = non_alpha_indexes(src.dataset)
 
