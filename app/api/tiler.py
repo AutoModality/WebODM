@@ -341,7 +341,7 @@ class Tiles(TaskNestedView):
         if tile_type in ['dsm', 'dtm'] and color_map is None:
             color_map = "gray"
 
-        if tile_type == 'orthophoto' and formula is not None:
+        if tile_type == 'orthophoto' and formula is not None and 'Falsecolor' not in formula:
             if color_map is None:
                 color_map = "gray"
             if rescale is None:
