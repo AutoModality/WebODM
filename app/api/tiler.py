@@ -321,10 +321,7 @@ class Tiles(TaskNestedView):
         if bands == '': bands = None
         if rescale == '': rescale = None
         if color_map == '': color_map = None
-        if hillshade == '' or hillshade == '0': hillshade = None
-
-        pattern = re.compile("([A-Z]+?[a-z]*)")
-        input_bands = tuple(re.findall(pattern, bands))
+        if hillshade == '' or hillshade == '0': hillshade = None        
 
         try:
             expr, _discard_ = lookup_formula(formula, bands)
@@ -387,6 +384,8 @@ class Tiles(TaskNestedView):
                                    ci.index(ColorInterp.blue) + 1,)
                     elif 'Falsecolor' in formula and \
                             len(formula.split('_')) >= 2: # ex. Falsecolor_NRG
+                        pattern = re.compile("([A-Z]+?[a-z]*)")
+                        input_bands = tuple(re.findall(pattern, bands))
                         false_color_bands = tuple(re.findall(pattern, formula.split('_')[1]))
                         if len(false_color_bands) == 3:
                             indexes = (input_bands.index(false_color_bands[0]) + 1,
