@@ -2,17 +2,17 @@
 __dirname=$(cd $(dirname "$0"); pwd -P)
 cd ${__dirname}
 
-echo -e "\033[92m"      
+echo -e "\033[92m"
 echo " _       __     __    ____  ____  __  ___"
 echo "| |     / /__  / /_  / __ \/ __ \/  |/  /"
 echo "| | /| / / _ \/ __ \/ / / / / / / /|_/ / "
 echo "| |/ |/ /  __/ /_/ / /_/ / /_/ / /  / /  "
 echo "|__/|__/\___/_.___/\____/_____/_/  /_/   "
-echo                          
+echo
 echo -e "\033[39m"
 
 almost_there(){
-    echo 
+    echo
     echo "===================="
     echo "You're almost there!"
     echo "===================="
@@ -38,9 +38,9 @@ fi
 
 if [ "$1" = "--setup-devenv" ] || [ "$2" = "--setup-devenv" ]; then
     echo Setup git modules...
-    
+
     git submodule update --init
-    
+
     echo Setup npm dependencies...
     npm install
 
@@ -97,12 +97,12 @@ congrats(){
     status=$(curl --max-time 300 -L -s -o /dev/null -w "%{http_code}" "$proto://localhost:8000")
 
     if [[ "$status" = "200" ]]; then
-        echo -e "\033[92m"      
+        echo -e "\033[92m"
         echo "Congratulations! └@(･◡･)@┐"
         echo ==========================
         echo -e "\033[39m"
         echo "If there are no errors, WebODM should be up and running!"
-    else    
+    else
         echo -e "\033[93m"
         echo "Something doesn't look right! ¯\_(ツ)_/¯"
         echo "The server returned a status code of $status when we tried to reach it."
@@ -148,7 +148,7 @@ else
     congrats
 
     nginx -c $(pwd)/nginx/$conf
-    gunicorn webodm.wsgi --bind unix:/tmp/gunicorn.sock --timeout 86400 --max-requests 500 --max-requests-jitter 25 --workers $((1*$(grep -c '^processor' /proc/cpuinfo)+1)) 
+    gunicorn webodm.wsgi --bind unix:/tmp/gunicorn.sock --timeout 86400 --max-requests 500 --max-requests-jitter 25 --workers $((1*$(grep -c '^processor' /proc/cpuinfo)+1))
 fi
 
 # If this is executed, it means the previous command failed, don't display the congratulations message

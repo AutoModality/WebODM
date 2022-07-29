@@ -11,6 +11,10 @@ algos = {
         'expr': '(N - R) / (N + R)',
         'help': _('Normalized Difference Vegetation Index shows the amount of green vegetation.')
     },
+    'NDYI': {
+        'expr': '(G - B) / (G + B)',
+        'help': _('Normalized difference yellowness index (NDYI), best model variability in relative yield potential in Canola.')
+    },
     'NDRE': {
         'expr': '(N - Re) / (N + Re)',
         'help': _('Normalized Difference Red Edge Index shows the amount of green vegetation of permanent or later stage crops.')
@@ -30,7 +34,7 @@ algos = {
     'vNDVI':{
         'expr': '0.5268*((R ** -0.1294) * (G ** 0.3389) * (B ** -0.3118))',
         'help': _('Visible NDVI is an un-normalized index for RGB sensors using constants derived from citrus, grape, and sugarcane crop data.')
-    },    
+    },
     'VARI': {
         'expr': '(G - R) / (G + R - B)',
         'help': _('Visual Atmospheric Resistance Index shows the areas of vegetation.'),
@@ -171,7 +175,23 @@ def lookup_formula(algo, band_order = 'RGB'):
 
 @lru_cache(maxsize=2)
 def get_algorithm_list(max_bands=3):
-    return [{'id': k, 'filters': get_camera_filters_for(algos[k], max_bands), **algos[k]} for k in algos if not k.startswith("_")]
+    res = []
+    for k in algos:
+        if k.startswith("_"):
+            continue
+
+        cam_filters = get_camera_filters_for(algos[k], max_bands)
+
+        if len(cam_filters) == 0:
+            continue
+
+        res.append({
+            'id': k,
+            'filters': cam_filters,
+            **algos[k]
+        })
+
+    return res
 
 def get_camera_filters_for(algo, max_bands=3):
     result = []
@@ -192,4 +212,3 @@ def get_camera_filters_for(algo, max_bands=3):
             result.append(f)
 
     return result
-
