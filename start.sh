@@ -148,7 +148,7 @@ else
     congrats
 
     nginx -c $(pwd)/nginx/$conf
-    gunicorn webodm.wsgi --bind unix:/tmp/gunicorn.sock --timeout 86400 --max-requests 1000 --max-requests-jitter 50 --workers $((1*$(grep -c '^processor' /proc/cpuinfo)+1))
+    gunicorn webodm.wsgi --bind unix:/tmp/gunicorn.sock --timeout 86400 --max-requests 1000 --max-requests-jitter 50 --workers $((1*$(grep -c '^processor' /proc/cpuinfo)-1)) --preload
 fi
 
 # If this is executed, it means the previous command failed, don't display the congratulations message
