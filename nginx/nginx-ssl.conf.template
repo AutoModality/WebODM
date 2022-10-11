@@ -4,7 +4,6 @@ worker_processes 1;
 user root root;
 pid /tmp/nginx.pid;
 error_log /tmp/nginx.error.log;
-proxy_cache_path /tmp/nginx_cache keys_zone=CACHE:256m max_size=10g;
 
 events {
   worker_connections 1024; # increase if you have lots of clients
@@ -52,9 +51,6 @@ http {
 
     # Accept byte-range request;
     add_header Accept-Ranges bytes;
-
-    # Cache
-    proxy_cache CACHE;
 
     # path for static files
     location /static {
