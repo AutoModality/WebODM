@@ -23,7 +23,6 @@ ASSETS_MAP = {
     },
     'dtm.tif': os.path.join('odm_dem', 'dtm.tif'),
     'dsm.tif': os.path.join('odm_dem', 'dsm.tif'),
-    'ndsm.tif': os.path.join('odm_dem', 'ndsm.tif'),
     'dtm_tiles.zip': {
         'deferred_path': 'dtm_tiles.zip',
         'deferred_compress_dir': 'dtm_tiles'
