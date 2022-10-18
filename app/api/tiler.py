@@ -61,7 +61,7 @@ def get_extent(task, tile_type):
         'orthophoto': task.orthophoto_extent,
         'dsm': task.dsm_extent,
         'dtm': task.dtm_extent,
-        'ndsm': task.ndsm_extent
+        'ndsm': task.dsm_extent
     }
     if not tile_type in extent_map:
         raise exceptions.NotFound()

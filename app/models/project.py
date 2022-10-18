@@ -50,7 +50,7 @@ class Project(models.Model):
     def get_map_items(self):
         return [task.get_map_items() for task in self.task_set.filter(
                     status=status_codes.COMPLETED
-                ).filter(Q(orthophoto_extent__isnull=False) | Q(dsm_extent__isnull=False) | Q(dtm_extent__isnull=False) | Q(ndsm_extent__isnull=False))
+                ).filter(Q(orthophoto_extent__isnull=False) | Q(dsm_extent__isnull=False) | Q(dtm_extent__isnull=False))
                 .only('id', 'project_id')]
     
     def duplicate(self):

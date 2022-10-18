@@ -72,7 +72,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Task
-        exclude = ('console_output', 'orthophoto_extent', 'dsm_extent', 'dtm_extent', 'ndsm_extent', )
+        exclude = ('console_output', 'orthophoto_extent', 'dsm_extent', 'dtm_extent', )
         read_only_fields = ('processing_time', 'status', 'last_error', 'created_at', 'pending_action', 'available_assets', )
 
 class TaskViewSet(viewsets.ViewSet):
@@ -81,7 +81,7 @@ class TaskViewSet(viewsets.ViewSet):
     A task represents a set of images and other input to be sent to a processing node.
     Once a processing node completes processing, results are stored in the task.
     """
-    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', 'ndsm_extent', 'console_output', )
+    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', 'console_output', )
     
     parser_classes = (parsers.MultiPartParser, parsers.JSONParser, parsers.FormParser, )
     ordering_fields = '__all__'
@@ -297,7 +297,7 @@ class TaskViewSet(viewsets.ViewSet):
 
 
 class TaskNestedView(APIView):
-    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', 'ndsm_extent', 'console_output', )
+    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', 'console_output', )
     permission_classes = (AllowAny, )
 
     def get_and_check_task(self, request, pk, annotate={}):
