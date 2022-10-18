@@ -250,6 +250,7 @@ class Task(models.Model):
     orthophoto_extent = GeometryField(null=True, blank=True, srid=4326, help_text=_("Extent of the orthophoto"), verbose_name=_("Orthophoto Extent"))
     dsm_extent = GeometryField(null=True, blank=True, srid=4326, help_text="Extent of the DSM", verbose_name=_("DSM Extent"))
     dtm_extent = GeometryField(null=True, blank=True, srid=4326, help_text="Extent of the DTM", verbose_name=_("DTM Extent"))
+    ndsm_extent = GeometryField(null=True, blank=True, srid=4326, help_text="Extent of the normalized DSM", verbose_name=_("DSM Extent"))
 
     # mission
     created_at = models.DateTimeField(default=timezone.now, help_text=_("Creation date"), verbose_name=_("Created at"))
@@ -860,6 +861,8 @@ class Task(models.Model):
              'dsm_extent'),
             (os.path.realpath(self.assets_path("odm_dem", "dtm.tif")),
              'dtm_extent'),
+             (os.path.realpath(self.assets_path("odm_dem", "ndsm.tif")),
+             'ndsm_extent'),
         ]
 
         for raster_path, field in extent_fields:
