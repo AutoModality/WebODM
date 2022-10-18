@@ -403,14 +403,16 @@ class Tiles(TaskNestedView):
                                         resampling_method=resampling)
                 else:
                     if boundaries_cutline is not None:
-                        tile = src.tile(x, y, z, tilesize=tilesize, nodata=nodata,
+                        tile = src.tile(x, y, z, indexes=indexes, tilesize=tilesize, nodata=nodata,
                                         padding=padding,
                                         tile_buffer=tile_buffer,
+                                        # unscale=True if len(indexes) < 3 else False,
                                         resampling_method=resampling, vrt_options={'cutline': boundaries_cutline})
                     else:
                         tile = src.tile(x, y, z, indexes=indexes, tilesize=tilesize, nodata=nodata,
                                         padding=padding,
                                         tile_buffer=tile_buffer,
+                                        # unscale=True if len(indexes) < 3 else False,
                                         resampling_method=resampling)
             except TileOutsideBounds:
                 raise exceptions.NotFound(_("Outside of bounds"))
