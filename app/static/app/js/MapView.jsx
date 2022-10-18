@@ -16,7 +16,7 @@ class MapView extends React.Component {
 
   static propTypes = {
       mapItems: PropTypes.array.isRequired, // list of dictionaries where each dict is a {mapType: 'orthophoto', url: <tiles.json>},
-      selectedMapType: PropTypes.oneOf(['orthophoto', 'plant', 'dsm', 'dtm']),
+      selectedMapType: PropTypes.oneOf(['orthophoto', 'plant', 'dsm', 'dtm', 'ndsm']),
       title: PropTypes.string,
       public: PropTypes.bool,
       shareButtons: PropTypes.bool
@@ -72,6 +72,11 @@ class MapView extends React.Component {
         label: _("Plant Health"),
         type: "plant",
         icon: "fa fa-seedling"
+      },
+      {
+        label: _("Canopy Height Model"),
+        type: "ndsm",
+        icon: "fa fa-chart-bar"
       },
       {
         label: _("Surface Model"),

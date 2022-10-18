@@ -50,6 +50,7 @@ const api = {
       new AssetDownload(_("Terrain Model (Tiles)"),"dtm_tiles.zip","fa fa-table"),
       new AssetDownload(_("Surface Model"),"dsm.tif","fa fa-chart-area", tiffExportFormats, elevationExportParams),
       new AssetDownload(_("Surface Model (Tiles)"),"dsm_tiles.zip","fa fa-table"),
+      new AssetDownload(_("Canopy Height Model"),"ndsm.zip","fa fa-chart-bar"),
       new AssetDownload(_("Point Cloud"),"georeferenced_model.laz","fa fa-cube", ["laz", "las", "ply", "csv"]),
       new AssetDownload(_("Point Cloud (3D Tiles)"),"3d_tiles_pointcloud.zip","fa fa-cube"),
       new AssetDownload(_("Textured Model"),"textured_model.zip","fab fa-connectdevelop"),

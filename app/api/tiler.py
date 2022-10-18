@@ -61,6 +61,7 @@ def get_extent(task, tile_type):
         'orthophoto': task.orthophoto_extent,
         'dsm': task.dsm_extent,
         'dtm': task.dtm_extent,
+        'ndsm': task.ndsm_extent
     }
     if not tile_type in extent_map:
         raise exceptions.NotFound()
@@ -218,7 +219,7 @@ class Metadata(TaskNestedView):
 
         colormaps = []
         algorithms = []
-        if tile_type in ['dsm', 'dtm']:
+        if tile_type in ['dsm', 'dtm', 'ndsm']:
             colormaps = ['viridis', 'jet', 'terrain', 'gist_earth', 'pastel1']
         elif formula and bands:
             colormaps = ['rdylgn', 'spectral', 'rdylgn_r', 'spectral_r', 'rplumbo', 'discrete_ndvi',
@@ -308,12 +309,12 @@ class Tiles(TaskNestedView):
             expr = None
             pass
 
-        if tile_type in ['dsm', 'dtm'] and rescale is None:
+        if tile_type in ['dsm', 'dtm', 'ndsm'] and rescale is None:
             rescale = "0,1000"
         if tile_type == 'orthophoto' and rescale is None:
             rescale = "0,255"
 
-        if tile_type in ['dsm', 'dtm'] and color_map is None:
+        if tile_type in ['dsm', 'dtm', 'ndsm'] and color_map is None:
             color_map = "gray"
 
         if tile_type == 'orthophoto' and formula is not None and 'Falsecolor' not in formula:
@@ -380,7 +381,7 @@ class Tiles(TaskNestedView):
             padding = 0
             tile_buffer = None
 
-            if tile_type in ["dsm", "dtm"]:
+            if tile_type in ["dsm", "dtm", "ndsm"]:
                 resampling = "bilinear"
                 padding = 16
 
@@ -524,13 +525,13 @@ class Export(TaskNestedView):
 
         expr = None
 
-        if asset_type in ['orthophoto', 'dsm', 'dtm'] and not export_format in ['gtiff', 'gtiff-rgb', 'jpg', 'png', 'kmz']:
+        if asset_type in ['orthophoto', 'dsm', 'dtm', 'ndsm'] and not export_format in ['gtiff', 'gtiff-rgb', 'jpg', 'png', 'kmz']:
             raise exceptions.ValidationError(_("Unsupported format: %(value)s") % {'value': export_format})
         if asset_type == 'georeferenced_model' and not export_format in ['laz', 'las', 'ply', 'csv']:
             raise exceptions.ValidationError(_("Unsupported format: %(value)s") % {'value': export_format})
 
         # Default color map, hillshade
-        if asset_type in ['dsm', 'dtm'] and export_format != 'gtiff':
+        if asset_type in ['dsm', 'dtm', 'ndsm'] and export_format != 'gtiff':
             if color_map is None:
                 color_map = 'viridis'
             if hillshade is None:
@@ -598,7 +599,7 @@ class Export(TaskNestedView):
                         extension
                     )
 
-        if asset_type in ['orthophoto', 'dsm', 'dtm']:
+        if asset_type in ['orthophoto', 'dsm', 'dtm', 'ndsm']:
             # Shortcut the process if no processing is required
             if export_format == 'gtiff' and (epsg == task.epsg or epsg is None) and expr is None:
                 return Response({'url': '/api/projects/{}/tasks/{}/download/{}.tif'.format(task.project.id, task.id, asset_type), 'filename': filename})
