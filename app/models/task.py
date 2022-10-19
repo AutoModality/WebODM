@@ -914,6 +914,7 @@ class Task(models.Model):
         if 'orthophoto.tif' in self.available_assets: types.append('plant')
         if 'dsm.tif' in self.available_assets: types.append('dsm')
         if 'dtm.tif' in self.available_assets: types.append('dtm')
+        if 'ndsm.tif' in self.available_assets: types.append('ndsm')
 
         camera_shots = ''
         if 'shots.geojson' in self.available_assets: camera_shots = '/api/projects/{}/tasks/{}/download/shots.geojson'.format(self.project.id, self.id)
