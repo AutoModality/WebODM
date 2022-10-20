@@ -41,7 +41,8 @@ export default class LayersControlLayer extends React.Component {
     const mUrlToDownload = [
         {url: "orthophoto/metadata", download: "orthophoto"},
         {url: "dsm/metadata", download: "dsm"},
-        {url: "dtm/metadata", download: "dtm"}
+        {url: "dtm/metadata", download: "dtm"},
+        {url: "ndsm/metadata", download: "ndsm"}
     ];
 
     if (mUrl){
