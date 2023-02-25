@@ -105,6 +105,12 @@ algos = {
         'help': _('Enhanced Vegetation Index is useful in areas where NDVI might saturate, by using blue wavelengths to correct soil signals.'),
         'range': (-1, 1)
     },
+    # The EBI is from Chen et al. (2019), see https://doi.org/10.1016/j.isprsjprs.2019.08.006
+    'EBI': {
+        'expr': '(R + G + B) / ((G / B) * (R - B + 1))',
+        'help': _('Enhanced Bloom Index is useful in quantifying flowering status.'),
+        'range': (0, 1)
+    },
     'Thermal_C': {
         'expr': 'Lwir',
         'help': _('Thermal temperature in Celsius degrees.')
