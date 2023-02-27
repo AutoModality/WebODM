@@ -108,7 +108,12 @@ algos = {
     # The EBI is from Chen et al. (2019), see https://doi.org/10.1016/j.isprsjprs.2019.08.006
     'EBI': {
         'expr': '(R + G + B) / ((G / B) * (R - B + 1))',
-        'help': _('Enhanced Bloom Index is useful in quantifying flowering status.'),
+        'help': _('Enhanced Bloom Index is to quantify flowering status, by reducing the impact of green leaves and soil background. The input is RGB reflectance data ranged in 0-1.'),
+        'range': (0, 1)
+    },
+    'EBI_rgb': {
+        'expr': '(R + G + B) / ((G / B) * (R - B + 256))',
+        'help': _('Enhanced Bloom Index is to quantify flowering status, by reducing the impact of green leaves and soil background. The input is RGB raw data.'),
         'range': (0, 1)
     },
     'Thermal_C': {
