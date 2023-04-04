@@ -45,6 +45,11 @@ algos = {
         'help': _('Visual Atmospheric Resistance Index shows the areas of vegetation.'),
         'range': (-1, 1)
     },
+    'MPRI': {
+        'expr': '(G - R) / (G + R)',
+        'help': _('Modified Photochemical Reflectance Index'),
+        'range': (-1, 1)
+    },
     'EXG': {
         'expr': '(2 * G) - (R + B)',
         'help': _('Excess Green Index (derived from only the RGB bands) emphasizes the greenness of leafy crops such as potatoes.')
@@ -115,6 +120,11 @@ algos = {
         'expr': '(R + G + B) / ((G / B) * (R - B + 256))',
         'help': _('Enhanced Bloom Index is to quantify flowering status, by reducing the impact of green leaves and soil background. The input is RGB raw data.'),
         'range': (0, 1)
+    },
+    'ARVI': {
+        'expr': '(N - (2 * R) + B) / (N + (2 * R) + B)',
+        'help': _('Atmospherically Resistant Vegetation Index. Useful when working with imagery for regions with high atmospheric aerosol content.'),
+        'range': (-1, 1)
     },
     'Thermal_C': {
         'expr': 'Lwir',
