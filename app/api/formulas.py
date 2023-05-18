@@ -170,6 +170,11 @@ camera_filters = [
     'BGRNReLwir',
     'BGRReNLwir',
 
+    'BGRNReP',
+    'BGPRReN',
+    'BGRNRePLwir',
+    'BGPRReNLwir',
+
     # more?
     # TODO: certain cameras have only two bands? eg. MAPIR NDVI BLUE+NIR
 ]
