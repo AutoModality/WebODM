@@ -450,8 +450,8 @@ class Tiles(TaskNestedView):
                     hillshade = float(hillshade)
                     if hillshade <= 0:
                         hillshade = 1.0
-                    if src.crs == WGS84_CRS:
-                        hillshade *= 1 / 111320
+                    if src.dataset.crs == WGS84_CRS:
+                        hillshade /= 111320.0
                 except ValueError:
                     raise exceptions.ValidationError(_("Invalid hillshade value"))
                 if tile.data.shape[0] != 1:
