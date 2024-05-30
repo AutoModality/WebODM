@@ -18,6 +18,7 @@ from rio_tiler.profiles import img_profiles
 from rio_tiler.colormap import cmap as colormap, apply_cmap
 from rio_tiler.io import COGReader
 from rio_tiler.errors import InvalidColorMapName
+from rio_tiler.constants import WGS84_CRS
 import numpy as np
 from .custom_colormaps_helper import custom_colormaps
 from app.raster_utils import extension_for_export_format, ZOOM_EXTRA_LEVELS
@@ -449,6 +450,8 @@ class Tiles(TaskNestedView):
                     hillshade = float(hillshade)
                     if hillshade <= 0:
                         hillshade = 1.0
+                    if src.crs == WGS84_CRS:
+                        hillshade *= 1 / 111320
                 except ValueError:
                     raise exceptions.ValidationError(_("Invalid hillshade value"))
                 if tile.data.shape[0] != 1:
