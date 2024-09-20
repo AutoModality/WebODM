@@ -128,8 +128,7 @@ algos = {
     },
     'CVI': {
         'expr': '(N * R) / (G * G)',
-        'help': _('Chlorophyll Vegetation Index. CVI has an increased sensitivity to the content of chlorophyll in the deciduous cover. It is used from the beginning to the middle of the crop growth cycle for a wide range of soils and sowing conditions.'),
-        'range': (0, 1)
+        'help': _('Chlorophyll Vegetation Index. CVI has an increased sensitivity to the content of chlorophyll in the deciduous cover. It is used from the beginning to the middle of the crop growth cycle for a wide range of soils and sowing conditions.')
     },
     'Thermal_C': {
         'expr': 'L',
