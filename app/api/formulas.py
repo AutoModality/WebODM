@@ -126,6 +126,11 @@ algos = {
         'help': _('Atmospherically Resistant Vegetation Index. Useful when working with imagery for regions with high atmospheric aerosol content.'),
         'range': (-1, 1)
     },
+    'CVI': {
+        'expr': '(N * R) / (G * G)',
+        'help': _('Chlorophyll Vegetation Index. CVI has an increased sensitivity to the content of chlorophyll in the deciduous cover. It is used from the beginning to the middle of the crop growth cycle for a wide range of soils and sowing conditions.'),
+        'range': (0, 1)
+    },
     'Thermal_C': {
         'expr': 'L',
         'help': _('Thermal temperature in Celsius degrees.')
