@@ -303,13 +303,6 @@ class Tiles(TaskNestedView):
         except ValueError:
             raise exceptions.ValidationError(_("Invalid tile size parameter"))
 
-        try:
-            expr, _discard_ = lookup_formula(formula, bands)
-        except ValueError as e:
-            # raise exceptions.ValidationError(str(e))
-            expr = None
-            pass
-
         if tile_type in ['dsm', 'dtm', 'ndsm'] and rescale is None:
             rescale = "0,1000"
         if tile_type == 'orthophoto' and rescale is None:
@@ -334,6 +327,13 @@ class Tiles(TaskNestedView):
         with COGReader(url) as src:
             if not src.tile_exists(z, x, y):
                 raise exceptions.NotFound(_("Outside of bounds"))
+
+            try:
+                expr, _discard_ = lookup_formula(formula, bands, scale = 1/32768 if src.dataset.dtype == 'uint16' else 1.0)
+            except ValueError as e:
+                # raise exceptions.ValidationError(str(e))
+                expr = None
+                pass
 
             minzoom, maxzoom = get_zoom_safe(src)
             has_alpha = has_alpha_band(src.dataset)

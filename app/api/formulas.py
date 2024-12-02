@@ -184,7 +184,7 @@ camera_filters = [
 ]
 
 @lru_cache(maxsize=20)
-def lookup_formula(algo, band_order = 'RGB'):
+def lookup_formula(algo, band_order = 'RGB', scale = 1.0):
     if algo is None:
         return None, None
     if band_order is None:
@@ -193,14 +193,16 @@ def lookup_formula(algo, band_order = 'RGB'):
     if algo not in algos:
         raise ValueError("Cannot find algorithm " + algo)
 
-    # input_bands = tuple(band_order)
     pattern = re.compile("([A-Z]+?[a-z]*)")
     input_bands = tuple(re.findall(pattern, band_order))
 
     def repl(matches):
         b = matches.group(1)
         try:
-            return 'b' + str(input_bands.index(b) + 1)
+            if scale != 1:
+                return '(b' + str(input_bands.index(b) + 1) + '*' + str(scale) + ')'
+            else:
+                return 'b' + str(input_bands.index(b) + 1)
         except ValueError:
             raise ValueError("Cannot find band \"" + b + "\" from \"" + band_order + "\". Choose a proper band order.")
 
