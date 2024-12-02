@@ -329,7 +329,7 @@ class Tiles(TaskNestedView):
                 raise exceptions.NotFound(_("Outside of bounds"))
 
             try:
-                expr, _discard_ = lookup_formula(formula, bands, scale = 1/32768 if src.dataset.dtype == 'uint16' else 1.0)
+                expr, _discard_ = lookup_formula(formula, bands, scale = 1/32768 if src.dataset.meta["dtype"] == 'uint16' else 1.0)
             except ValueError as e:
                 # raise exceptions.ValidationError(str(e))
                 expr = None
