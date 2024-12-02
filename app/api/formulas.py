@@ -199,7 +199,7 @@ def lookup_formula(algo, band_order = 'RGB', scale = 1.0):
     def repl(matches):
         b = matches.group(1)
         try:
-            if scale != 1:
+            if scale != 1 and b != 'L': # exclude LWIR band
                 return '(b' + str(input_bands.index(b) + 1) + '*' + str(scale) + ')'
             else:
                 return 'b' + str(input_bands.index(b) + 1)
