@@ -137,24 +137,25 @@ class Metadata(TaskNestedView):
         if boundaries_feature == '': boundaries_feature = None
         if boundaries_feature is not None:
             boundaries_feature = json.loads(boundaries_feature)
-        try:
-            expr, hrange = lookup_formula(formula, bands)
-            if defined_range is not None:
-                new_range = tuple(map(float, defined_range.split(",")[:2]))
-                #Validate rescaling range
-                if hrange is not None and (new_range[0] < hrange[0] or new_range[1] > hrange[1]):
-                    pass
-                else:
-                    hrange = new_range
 
-        except ValueError as e:
-            raise exceptions.ValidationError(str(e))
         pmin, pmax = 2.0, 98.0
         raster_path = get_raster_path(task, tile_type)
         if not os.path.isfile(raster_path):
             raise exceptions.NotFound()
         try:
             with COGReader(raster_path) as src:
+                try:
+                    expr, hrange = lookup_formula(formula, bands, scale = 1/32768 if src.dataset.meta["dtype"] == 'uint16' else 1.0)
+                    if defined_range is not None:
+                        new_range = tuple(map(float, defined_range.split(",")[:2]))
+                        #Validate rescaling range
+                        if hrange is not None and (new_range[0] < hrange[0] or new_range[1] > hrange[1]):
+                            pass
+                        else:
+                            hrange = new_range
+                except ValueError as e:
+                    raise exceptions.ValidationError(str(e))
+
                 band_count = src.dataset.meta['count']
                 if boundaries_feature is not None:
                     boundaries_cutline = create_cutline(src.dataset, boundaries_feature, CRS.from_string('EPSG:4326'))
