@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {% load i18n static settings compress plugins %}
+    {% load i18n cache static settings plugins %}
     <!-- 
     WebODM - User-friendly, commercial grade software for processing aerial imagery.
     Copyright (C) 2020  WebODM Authors
@@ -22,8 +22,9 @@
     
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <meta name="author" content="WebODM Contributors">
+    <meta name="robots" content="noindex, nofollow">
     <link rel="icon" type="image/png" href="{% settings_image_url 'app_logo_favicon' %}" sizes="32x32">
 
     <link rel="stylesheet" type="text/css" href="{% static 'app/css/bootstrap.min.css' %}" />
@@ -51,9 +52,11 @@
 
     <title>{{title|default:"Login"}} - {{ SETTINGS.app_name }}</title>
 
-    {% compress css %}
-    <link rel="stylesheet" type="text/x-scss" href="{% static 'app/css/theme.scss' %}" />
-    {% endcompress %}
+    {% cache 3600 theme_css %}
+    <style type="text/css">
+    {% include "theme.css" %}
+    </style>
+    {% endcache %}
 
     {% is_desktop_mode as desktop_mode %}
     {% if desktop_mode %}
@@ -115,6 +118,9 @@
 </body>
 <script src="{% static 'app/js/vendor/metisMenu.min.js' %}"></script>
 <script>
+{% task_options_docs_link as to_link %}
+window.__taskOptionsDocsLink = "{{ to_link|safe }}";
+
 $(function(){
     $('#side-menu').metisMenu();
 

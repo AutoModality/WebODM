@@ -66,7 +66,6 @@ export default class LayersControlLayer extends React.Component {
         exportLoading: false,
         error: ""
     };
-
     this.rescale = params.rescale || "";
   }
 
@@ -111,7 +110,7 @@ export default class LayersControlLayer extends React.Component {
     }
   }
 
-  handleLayerClick = () => {
+  handleZoomToClick = () => {
     const { layer } = this.props;
 
     const bounds = layer.options.bounds !== undefined ? 
@@ -120,6 +119,14 @@ export default class LayersControlLayer extends React.Component {
     this.map.fitBounds(bounds);
 
     if (layer.getPopup()) layer.openPopup();
+  }
+
+  handleLayerClick = () => {
+    if (this.props.overlay){
+        this.setState({visible: !this.state.visible});
+    }else{
+        this.setState({expanded: !this.state.expanded});
+    }
   }
 
   handleSelectColor = e => {
@@ -135,7 +142,7 @@ export default class LayersControlLayer extends React.Component {
 
     // Check if bands need to be switched
     const algo = this.getAlgorithm(e.target.value);
-    if (algo && algo['filters'].indexOf(bands) === -1) bands = algo['filters'][0]; // Pick first
+    if (algo && algo['filters'].indexOf(bands) === -1 && bands !== "auto") bands = algo['filters'][0]; // Pick first
 
     this.setState({formula: e.target.value, bands});
   }
@@ -171,7 +178,14 @@ export default class LayersControlLayer extends React.Component {
             // Update rescale values
             const { statistics } = this.tmeta;
             if (statistics && statistics["1"]){
-                this.rescale = `${statistics["1"]["min"]},${statistics["1"]["max"]}`;
+                let min = Infinity;
+                let max = -Infinity;
+
+                for (let b in statistics){
+                    min = Math.min(statistics[b]["percentiles"][0]);
+                    max = Math.max(statistics[b]["percentiles"][1]);
+                }
+                this.rescale = `${min},${max}`;
             }
 
             this.updateLayer();
@@ -263,7 +277,7 @@ export default class LayersControlLayer extends React.Component {
   render(){
     const { colorMap, bands, hillshade, formula, histogramLoading, exportLoading } = this.state;
     const { meta, tmeta } = this;
-    const { color_maps, algorithms } = tmeta;
+    const { color_maps, algorithms, auto_bands } = tmeta;
     const algo = this.getAlgorithm(formula);
 
     let cmapValues = null;
@@ -271,16 +285,32 @@ export default class LayersControlLayer extends React.Component {
         cmapValues = (color_maps.find(c => c.key === colorMap) || {}).color_map;
     }
 
+    let hmin = null;
+    let hmax = null;
+    if (this.rescale){
+        let parts = decodeURIComponent(this.rescale).split(",");
+        if (parts.length === 2 && parts[0] && parts[1]){
+            hmin = parseFloat(parts[0]);
+            hmax = parseFloat(parts[1]);
+        }
+    }
+
     return (<div className="layers-control-layer">
-        {!this.props.overlay ? <ExpandButton bind={[this, 'expanded']} /> : <div className="overlayIcon"><i className={meta.icon || "fa fa-vector-square fa-fw"}></i></div>}<Checkbox bind={[this, 'visible']}/>
-        <a title={meta.name} className="layer-label" href="javascript:void(0);" onClick={this.handleLayerClick}>{meta.name}</a>
+        <div className="layer-control-title">
+            {!this.props.overlay ? <ExpandButton bind={[this, 'expanded']} /> : <div className="paddingSpace"></div>}<Checkbox bind={[this, 'visible']}/>
+            <a title={meta.name} className="layer-label" href="javascript:void(0);" onClick={this.handleLayerClick}><i className={"layer-icon " + (meta.icon || "fa fa-vector-square fa-fw")}></i><div className="layer-title">{meta.name}</div></a> <a className="layer-action" href="javascript:void(0)" onClick={this.handleZoomToClick}><i title={_("Zoom To")} className="fa fa-expand"></i></a>
+        </div>
 
         {this.state.expanded ? 
         <div className="layer-expanded">
             <Histogram width={274}
                         loading={histogramLoading}
-                        statistics={tmeta.statistics} 
+                        statistics={tmeta.statistics}
+                        unitForward={meta.unitForward}
+                        unitBackward={meta.unitBackward}
                         colorMap={cmapValues}
+                        min={hmin}
+                        max={hmax}
                         onUpdate={this.handleHistogramUpdate} />
 
             <ErrorMessage bind={[this, "error"]} />
@@ -299,13 +329,17 @@ export default class LayersControlLayer extends React.Component {
 
             {bands !== "" && algo ? 
             <div className="row form-group form-inline">
-                <label className="col-sm-3 control-label">{_("Filter:")}</label>
+                <label className="col-sm-3 control-label">{_("Bands:")}</label>
                 <div className="col-sm-9 ">
                     {histogramLoading ? 
                     <i className="fa fa-circle-notch fa-spin fa-fw" /> :
-                    <select className="form-control" value={bands} onChange={this.handleSelectBands}>
+                    [<select key="sel" className="form-control" value={bands} onChange={this.handleSelectBands} title={auto_bands.filter !== "" && bands == "auto" ? auto_bands.filter : ""}>
+                        <option key="auto" value="auto">{_("Automatic")}</option>
                         {algo.filters.map(f => <option key={f} value={f}>{f}</option>)}
-                    </select>}
+                    </select>,
+                    bands == "auto" && !auto_bands.match ? 
+                    <i key="ico" style={{marginLeft: '4px'}} title={interpolate(_("Not every band for %(name)s could be automatically identified."), {name: algo.id}) + "\n" + _("Your sensor might not have the proper bands for using this algorithm.")} className="fa fa-exclamation-circle info-button"></i>
+                    : ""]}
                 </div>
             </div> : ""}
 

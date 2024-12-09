@@ -3,20 +3,29 @@ import PropTypes from 'prop-types';
 import '../css/Histogram.scss';
 import d3 from 'd3';
 import { _ } from '../classes/gettext';
+import { onUnitSystemChanged, offUnitSystemChanged } from '../classes/Units';
 
 export default class Histogram extends React.Component {
   static defaultProps = {
       width: 280,
       colorMap: null,
+      unitForward: value => value,
+      unitBackward: value => value,
       onUpdate: null,
       loading: false,
+      min: null,
+      max: null
   };
   static propTypes = {
       statistics: PropTypes.object.isRequired,
       colorMap: PropTypes.array,
+      unitForward: PropTypes.func,
+      unitBackward: PropTypes.func,
       width: PropTypes.number,
       onUpdate: PropTypes.func,
-      loading: PropTypes.bool
+      loading: PropTypes.bool,
+      min: PropTypes.number,
+      max: PropTypes.number
   }
 
   constructor(props){
@@ -53,11 +62,19 @@ export default class Histogram extends React.Component {
     this.rangeX = [minX, maxX];
     this.rangeY = [minY, maxY];
 
+    let min = minX;
+    let max = maxX;
+
+    if (this.props.min !== null && this.props.max !== null){
+        min = this.props.min;
+        max = this.props.max;
+    }
+
     const st = {
-        min: minX.toFixed(3),
-        max: maxX.toFixed(3),
-        minInput: minX.toFixed(3),
-        maxInput: maxX.toFixed(3)
+        min: min,
+        max: max,
+        minInput: this.props.unitForward(min).toFixed(3),
+        maxInput: this.props.unitForward(max).toFixed(3)
     };
 
     if (!this.state){
@@ -101,11 +118,14 @@ export default class Histogram extends React.Component {
     let x = d3.scale.linear()
                 .domain(this.rangeX)
                 .range([0, width]);
+    let tickFormat = x => {
+        return this.props.unitForward(x).toFixed(0);
+    };
 
     svg.append("g")
         .attr("class", "x axis theme-fill-primary")
         .attr("transform", "translate(0," + (height - 5) + ")")
-        .call(d3.svg.axis().scale(x).tickValues(this.rangeX).orient("bottom"));
+        .call(d3.svg.axis().scale(x).tickValues(this.rangeX).tickFormat(tickFormat).orient("bottom"));
 
     // add the y Axis
     let y = d3.scale.linear()
@@ -183,7 +203,7 @@ export default class Histogram extends React.Component {
             maxLine.setAttribute('x2', newX);
 
             if (prevX !== newX){
-                self.setState({max: (self.rangeX[0] + ((self.rangeX[1] - self.rangeX[0]) / width) * newX).toFixed(3)});
+                self.setState({max: (self.rangeX[0] + ((self.rangeX[1] - self.rangeX[0]) / width) * newX)});
             }
         }
     };
@@ -201,7 +221,7 @@ export default class Histogram extends React.Component {
             minLine.setAttribute('x2', newX);
 
             if (prevX !== newX){
-                self.setState({min: (self.rangeX[0] + ((self.rangeX[1] - self.rangeX[0]) / width) * newX).toFixed(3)});
+                self.setState({min: (self.rangeX[0] + ((self.rangeX[1] - self.rangeX[0]) / width) * newX)});
             }
         }
     };
@@ -234,11 +254,28 @@ export default class Histogram extends React.Component {
   
   componentDidMount(){
     this.redraw();
+    onUnitSystemChanged(this.handleUnitSystemChanged);
+  }
+
+  componentWillUnmount(){
+    offUnitSystemChanged(this.handleUnitSystemChanged);
+  }
+
+  handleUnitSystemChanged = e => {
+    this.redraw();
+    this.setState({
+        minInput: this.props.unitForward(this.state.min).toFixed(3), 
+        maxInput: this.props.unitForward(this.state.max).toFixed(3)
+    });
   }
     
   componentDidUpdate(prevProps, prevState){
-      if (prevState.min !== this.state.min) this.state.minInput = this.state.min;
-      if (prevState.max !== this.state.max) this.state.maxInput = this.state.max;
+      if (prevState.min !== this.state.min || prevState.max !== this.state.max){
+        this.setState({
+            minInput: this.props.unitForward(this.state.min).toFixed(3), 
+            maxInput: this.props.unitForward(this.state.max).toFixed(3)
+        });
+      }
 
       if (prevState.min !== this.state.min || 
           prevState.max !== this.state.max ||
@@ -277,28 +314,44 @@ export default class Histogram extends React.Component {
         
   handleChangeMax = (e) => {
     this.setState({maxInput: e.target.value});
-    const val = parseFloat(e.target.value);
+  }
 
-    if (val >= this.state.min && val <= this.rangeX[1]){
-        this.setState({max: val});
+  handleMaxBlur = (e) => {
+    let val = parseFloat(e.target.value);
+    if (!isNaN(val)){
+        val = this.props.unitBackward(val);
+        val = Math.max(this.state.min, Math.min(this.rangeX[1], val));
+        this.setState({max: val, maxInput: val.toFixed(3)});
     }
+  }
+
+  handleMaxKeyDown = (e) => {
+    if (e.key === 'Enter') this.handleMaxBlur(e);
   }
 
   handleChangeMin = (e) => {
     this.setState({minInput: e.target.value});
-    const val = parseFloat(e.target.value);
+  }
 
-    if (val <= this.state.max && val >= this.rangeX[0]){
-        this.setState({min: val});
+  handleMinBlur = (e) => {
+    let val = parseFloat(e.target.value);
+    if (!isNaN(val)){
+        val = this.props.unitBackward(val);
+        val = Math.max(this.rangeX[0], Math.min(this.state.max, val));
+        this.setState({min: val, minInput: val.toFixed(3)});
     }
+  };
+
+  handleMinKeyDown = (e) => {
+    if (e.key === 'Enter') this.handleMinBlur(e);
   }
 
   render(){
     return (<div className={"histogram " + (this.props.loading ? "disabled" : "")}>
         <div ref={(domNode) => { this.hgContainer = domNode; }}>
         </div>
-        <label>{_("Min:")}</label> <input onChange={this.handleChangeMin} type="number" className="form-control min-max" size={5} value={this.state.minInput} />
-        <label>{_("Max:")}</label> <input onChange={this.handleChangeMax} type="number" className="form-control min-max" size={5} value={this.state.maxInput} />
+        <label>{_("Min:")}</label> <input onKeyDown={this.handleMinKeyDown} onBlur={this.handleMinBlur} onChange={this.handleChangeMin} type="number" className="form-control min-max" size={5} value={this.state.minInput} />
+        <label>{_("Max:")}</label> <input onKeyDown={this.handleMaxKeyDown} onBlur={this.handleMaxBlur} onChange={this.handleChangeMax} type="number" className="form-control min-max" size={5} value={this.state.maxInput} />
     </div>);
   }
 }
