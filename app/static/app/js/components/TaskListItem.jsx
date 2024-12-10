@@ -14,6 +14,7 @@ import PipelineSteps from '../classes/PipelineSteps';
 import Css from '../classes/Css';
 import Tags from '../classes/Tags';
 import Trans from './Trans';
+import Utils from '../classes/Utils';
 import { _, interpolate } from '../classes/gettext';
 
 class TaskListItem extends React.Component {
@@ -136,8 +137,8 @@ class TaskListItem extends React.Component {
 
       this.setAutoRefresh();
     })
-    .fail(( _, __, errorThrown) => {
-      if (errorThrown === "Not Found"){ // Don't translate this one
+    .fail((result, __, errorThrown) => {
+      if (result.status === 404 || errorThrown === "Not Found"){ // Don't translate this one
         // Assume this has been deleted
         if (this.props.onDelete) this.props.onDelete(this.state.task.id);
       }else{
@@ -237,7 +238,10 @@ class TaskListItem extends React.Component {
     if (!Array.isArray(options)) return "";
     else if (options.length === 0) return "Default";
     else {
-      return options.map(opt => `${opt.name}: ${opt.value}`).join(", ");
+      return options.map(opt => {
+        if (opt.name === "boundary") return `${opt.name}:geojson`;
+        else return `${opt.name}:${opt.value}`
+      }).join(", ");
     }
   }
 
@@ -265,7 +269,7 @@ class TaskListItem extends React.Component {
           <li>${_("Not enough overlap between images")}</li>
           <li>${_("Images might be too blurry (common with phone cameras)")}</li>
           <li>${_("The min-num-features task option is set too low, try increasing it by 25%")}</li>
-        </ul>`, link: `<a href='https://help.dronedeploy.com/hc/en-us/articles/1500004964282-Making-Successful-Maps' target='_blank'>${_("here")}</a>`})});
+        </ul>`, link: `<a href='https://docs.webodm.net/references/create-successful-maps' target='_blank'>${_("here")}</a>`})});
       }else if (line.indexOf("Illegal instruction") !== -1 ||
                 line.indexOf("Child returned 132") !== -1){
         this.setState({friendlyTaskError: interpolate(_("It looks like this computer might be too old. WebODM requires a computer with a 64-bit CPU supporting MMX, SSE, SSE2, SSE3 and SSSE3 instruction set support or higher. You can still run WebODM if you compile your own docker images. See %(link)s for more information."), { link: `<a href='https://github.com/OpenDroneMap/WebODM#common-troubleshooting'>${_("this page")}</a>` } )});
@@ -332,7 +336,7 @@ class TaskListItem extends React.Component {
     return items;
   }
 
-  genRestartAction(rerunFrom = null){
+  genRestartAction(rerunFrom = null, options = {}){
     const { task } = this.state;
 
     const restartAction = this.genActionApiCall("restart", {
@@ -387,9 +391,19 @@ class TaskListItem extends React.Component {
           });
     };
 
-    return () => {
+    let doAction = () => {
       setTaskRerunFrom(rerunFrom)
         .then(restartAction);
+    };
+
+    return () => {
+      if (options.confirm){
+        if (window.confirm(options.confirm)){
+          doAction();
+        }
+      }else{
+        doAction();
+      }
     };
   }
 
@@ -484,7 +498,7 @@ class TaskListItem extends React.Component {
                               task.can_rerun_from[1] :
                               null;
 
-          addActionButton(_("Restart"), "btn-primary", "glyphicon glyphicon-repeat", this.genRestartAction(rerunFrom), {
+          addActionButton(_("Restart"), "btn-primary", "glyphicon glyphicon-repeat", this.genRestartAction(rerunFrom, {confirm: _("Are you sure you want to restart this task?")}), {
             subItems: this.getRestartSubmenuItems()
           });
       }
@@ -506,7 +520,7 @@ class TaskListItem extends React.Component {
 
               let buttonHtml = (<button type="button" className={"btn btn-sm " + button.className} onClick={button.onClick} disabled={disabled}>
                                 <i className={button.icon}></i>
-                                {button.label}
+                                <span className="hidden-xs">{button.label}</span>
                             </button>);
               if (subItems.length > 0){
                   // The button expands sub items
@@ -572,6 +586,15 @@ class TaskListItem extends React.Component {
                     <td><strong>{_("Reconstructed Points:")}</strong></td>
                     <td>{stats.pointcloud.points.toLocaleString()}</td>
                   </tr>}
+                  {task.size > 0 && 
+                  <tr>
+                    <td><strong>{_("Disk Usage:")}</strong></td>
+                    <td>{Utils.bytesToSize(task.size * 1024 * 1024)}</td>
+                  </tr>}
+                  <tr>
+                    <td><strong>{_("Task ID:")}</strong></td>
+                    <td>{task.id}</td>
+                  </tr>
                   <tr>
                       <td><strong>{_("Task Output:")}</strong></td>
                       <td><div className="btn-group btn-toggle"> 
@@ -596,17 +619,17 @@ class TaskListItem extends React.Component {
                     /> : ""}
 
               {showOrthophotoMissingWarning ?
-              <div className="task-warning"><i className="fa fa-warning"></i> <span>{_("An orthophoto could not be generated. To generate one, make sure GPS information is embedded in the EXIF tags of your images, or use a Ground Control Points (GCP) file.")}</span></div> : ""}
+              <div className="task-warning"><i className="fa fa-exclamation-triangle"></i> <span>{_("An orthophoto could not be generated. To generate one, make sure GPS information is embedded in the EXIF tags of your images, or use a Ground Control Points (GCP) file.")}</span></div> : ""}
 
               {showMemoryErrorWarning ?
-              <div className="task-warning"><i className="fa fa-support"></i> <Trans params={{ memlink: `<a href="${memoryErrorLink}" target='_blank'>${_("enough RAM allocated")}</a>`, cloudlink: `<a href='https://www.opendronemap.org/webodm/lightning/' target='_blank'>${_("cloud processing node")}</a>` }}>{_("It looks like your processing node ran out of memory. If you are using docker, make sure that your docker environment has %(memlink)s. Alternatively, make sure you have enough physical RAM, reduce the number of images, make your images smaller, or reduce the max-concurrency parameter from the task's options. You can also try to use a %(cloudlink)s.")}</Trans></div> : ""}
+              <div className="task-warning"><i className="fa fa-support"></i> <Trans params={{ memlink: `<a href="${memoryErrorLink}" target='_blank'>${_("enough RAM allocated")}</a>`, cloudlink: `<a href='https://webodm.net' target='_blank'>${_("cloud processing node")}</a>` }}>{_("It looks like your processing node ran out of memory. If you are using docker, make sure that your docker environment has %(memlink)s. Alternatively, make sure you have enough physical RAM, reduce the number of images, make your images smaller, or reduce the max-concurrency parameter from the task's options. You can also try to use a %(cloudlink)s.")}</Trans></div> : ""}
 
               {showTaskWarning ?
               <div className="task-warning"><i className="fa fa-support"></i> <span dangerouslySetInnerHTML={{__html: this.state.friendlyTaskError}} /></div> : ""}
 
               {showExitedWithCodeOneHints ?
               <div className="task-warning"><i className="fa fa-info-circle"></i> <div className="inline">
-                  <Trans params={{link: `<a href="https://docs.opendronemap.org" target="_blank">docs.opendronemap.org</a>` }}>{_("\"Process exited with code 1\" means that part of the processing failed. Sometimes it's a problem with the dataset, sometimes it can be solved by tweaking the Task Options. Check the documentation at %(link)")}</Trans>
+                  <Trans params={{link: `<a href="${window.__taskOptionsDocsLink}" target="_blank">${window.__taskOptionsDocsLink.replace("https://", "")}</a>` }}>{_("\"Process exited with code 1\" means that part of the processing failed. Sometimes it's a problem with the dataset, sometimes it can be solved by tweaking the Task Options. Check the documentation at %(link)s")}</Trans>
                 </div>
               </div>
               : ""}
@@ -644,7 +667,7 @@ class TaskListItem extends React.Component {
       return (<div 
             className={"status-label theme-border-primary " + type} 
             style={{background: `linear-gradient(90deg, ${color} ${progress}%, rgba(255, 255, 255, 0) ${progress}%)`}}
-            title={text}><i className={statusIcon}></i> {text}</div>);
+            title={text}><i className={statusIcon}></i><span> {text}</span></div>);
     }
 
     let statusLabel = "";
@@ -729,36 +752,22 @@ class TaskListItem extends React.Component {
             />
         : ""}
         <div className="row">
-          <div className="col-sm-5 col-xs-12 name">
+          <div className="col-xs-7 col-sm-6 col-md-5 col-lg-6 name">
             <i onClick={this.toggleExpanded} className={"clickable far " + (this.state.expanded ? "fa-minus-square" : " fa-plus-square")}></i> <a href="javascript:void(0);" onClick={this.toggleExpanded} className="name-link">{name}</a>
             {userTags.length > 0 ? 
               userTags.map((t, i) => <div key={i} className="tag-badge small-badge" onClick={this.handleTagClick(t)}>{t}</div>)
               : ""}
           </div>
-          <div className="col-sm-1 col-xs-5 details">
+          <div className="col-md-1 hidden-xs hidden-sm details">
             <i className="far fa-image"></i> {task.images_count}
           </div>
-          <div className="col-sm-2 col-xs-5 details">
+          <div className="col-md-2 hidden-xs hidden-sm details">
             <i className="far fa-clock"></i> {this.hoursMinutesSecs(this.state.time)}
           </div>
-          <div className="col-xs-2 text-right visible-xs-block">
-            {taskActions.length > 0 ? 
-                <div className="btn-group">
-                <button disabled={disabled || actionLoading} className="btn task-actions btn-secondary btn-xs dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                    <i className={"fa " + taskActionsIcon}></i>
-                </button>
-                <ul className="dropdown-menu dropdown-menu-right">
-                    {taskActions}
-                </ul>
-                </div>
-            : ""}
-          </div>
-          <div className="col-sm-3 col-xs-12">
+          <div className="col-xs-5 col-sm-6 col-md-4 col-lg-3 actions">
             {showEditLink ?
               <a href="javascript:void(0);" onClick={this.startEditing}>{statusLabel}</a>
               : statusLabel}
-          </div>
-          <div className="col-sm-1 text-right hidden-xs">
             {taskActions.length > 0 ? 
                 <div className="btn-group">
                 <button disabled={disabled || actionLoading} className="btn task-actions btn-secondary btn-xs dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">

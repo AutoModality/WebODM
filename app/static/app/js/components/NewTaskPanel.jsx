@@ -4,6 +4,7 @@ import EditTaskForm from './EditTaskForm';
 import PropTypes from 'prop-types';
 import Storage from '../classes/Storage';
 import ResizeModes from '../classes/ResizeModes';
+import MapPreview from './MapPreview';
 import update from 'immutability-helper';
 import PluginsAPI from '../classes/plugins/API';
 import { _, interpolate } from '../classes/gettext';
@@ -34,6 +35,7 @@ class NewTaskPanel extends React.Component {
       taskInfo: {},
       inReview: false,
       loading: false,
+      showMapPreview: false
     };
 
     this.save = this.save.bind(this);
@@ -42,6 +44,12 @@ class NewTaskPanel extends React.Component {
     this.setResizeMode = this.setResizeMode.bind(this);
     this.handleResizeSizeChange = this.handleResizeSizeChange.bind(this);
     this.handleFormChanged = this.handleFormChanged.bind(this);
+  }
+
+  componentDidUpdate(prevProps, prevState){
+    if (this.props.filesCount !== prevProps.filesCount && this.mapPreview){
+      this.mapPreview.loadNewFiles();
+    }
   }
 
   componentDidMount(){
@@ -123,18 +131,54 @@ class NewTaskPanel extends React.Component {
     this.setState({taskInfo: this.getTaskInfo()});
   }
 
+  handleSuggestedTaskName = () => {
+    return this.props.suggestedTaskName(() => {
+      // Has GPS
+      this.setState({showMapPreview: true});
+    });
+  }
+
+  getCropPolygon = () => {
+    if (!this.mapPreview) return null;
+    return this.mapPreview.getCropPolygon();
+  };
+
+  handlePolygonChange = () => {
+    if (this.taskForm) this.taskForm.forceUpdate();
+  }
+
   render() {
+    let filesCountOk = true;
+    if (this.taskForm && !this.taskForm.checkFilesCount(this.props.filesCount)) filesCountOk = false;
+    
     return (
       <div className="new-task-panel theme-background-highlight">
         <div className="form-horizontal">
           <div className={this.state.inReview ? "disabled" : ""}>
             <p>{interpolate(_("%(count)s files selected. Please check these additional options:"), { count: this.props.filesCount})}</p>
+
+            {!filesCountOk ? 
+            <div className="alert alert-warning">
+              {interpolate(_("Number of files selected exceeds the maximum of %(count)s allowed on this processing node."), { count: this.taskForm.selectedNodeMaxImages() })}
+              <button onClick={this.props.onCancel} type="button" className="btn btn-xs btn-primary redo">
+                <span><i className="glyphicon glyphicon-remove-circle"></i> {_("Cancel")}</span>
+              </button>
+            </div>
+            : ""}
+
+            {this.state.showMapPreview ? <MapPreview 
+              getFiles={this.props.getFiles}
+              onPolygonChange={this.handlePolygonChange}
+              ref={(domNode) => {this.mapPreview = domNode; }}
+            /> : ""}
+
             <EditTaskForm
               selectedNode={Storage.getItem("last_processing_node") || "auto"}
               onFormLoaded={this.handleFormTaskLoaded}
               onFormChanged={this.handleFormChanged}
               inReview={this.state.inReview}
-              suggestedTaskName={this.props.suggestedTaskName}
+              suggestedTaskName={this.handleSuggestedTaskName}
+              getCropPolygon={this.getCropPolygon}
               ref={(domNode) => { if (domNode) this.taskForm = domNode; }}
             />
 
@@ -186,7 +230,7 @@ class NewTaskPanel extends React.Component {
                 {this.state.loading ?
                   <button type="submit" className="btn btn-primary" disabled={true}><i className="fa fa-circle-notch fa-spin fa-fw"></i>{_("Loading…")}</button>
                   :
-                  <button type="submit" className="btn btn-primary" onClick={this.save} disabled={this.props.filesCount <= 1}><i className="glyphicon glyphicon-saved"></i> {!this.state.inReview ? _("Review") : _("Start Processing")}</button>
+                  <button type="submit" className="btn btn-primary" onClick={this.save} disabled={this.props.filesCount < 1 || !filesCountOk}><i className="glyphicon glyphicon-saved"></i> {!this.state.inReview ? _("Review") : _("Start Processing")}</button>
                 }
               </div>
             </div>

@@ -13,6 +13,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils.translation import ugettext as _
 from django import forms
+from app.views.utils import get_permissions
 from webodm import settings
 
 def index(request):
@@ -38,14 +39,22 @@ def dashboard(request):
         return redirect(settings.PROCESSING_NODES_ONBOARDING)
 
     no_tasks = Task.objects.filter(project__owner=request.user).count() == 0
+    no_projects = Project.objects.filter(owner=request.user).count() == 0
 
+    permissions = []
+    if request.user.has_perm('app.add_project'):
+        permissions.append('add_project')
+    
     # Create first project automatically
-    if Project.objects.count() == 0:
+    if no_projects and 'add_project' in permissions:
         Project.objects.create(owner=request.user, name=_("First Project"))
 
     return render(request, 'app/dashboard.html', {'title': _('Dashboard'),
         'no_processingnodes': no_processingnodes,
-        'no_tasks': no_tasks
+        'no_tasks': no_tasks,
+        'params': {
+            'permissions': json.dumps(permissions)
+        }.items()
     })
 
 
@@ -72,7 +81,8 @@ def map(request, project_pk=None, task_pk=None):
                 'map-items': json.dumps(mapItems),
                 'title': title,
                 'public': 'false',
-                'share-buttons': 'false' if settings.DESKTOP_MODE else 'true'
+                'share-buttons': 'false' if settings.DESKTOP_MODE else 'true',
+                'permissions': json.dumps(get_permissions(request.user, project))
             }.items()
         })
 
@@ -108,7 +118,7 @@ def about(request):
 def processing_node(request, processing_node_id):
     pn = get_object_or_404(ProcessingNode, pk=processing_node_id)
     if not pn.update_node_info():
-        messages.add_message(request, messages.constants.WARNING, '{} seems to be offline.'.format(pn))
+        messages.add_message(request, messages.constants.WARNING, _('%(node)s seems to be offline.') % {'node': pn})
 
     return render(request, 'app/processing_node.html', 
             {

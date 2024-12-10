@@ -60,6 +60,7 @@ class ProjectListItem extends React.Component {
     this.toggleTaskList = this.toggleTaskList.bind(this);
     this.closeUploadError = this.closeUploadError.bind(this);
     this.cancelUpload = this.cancelUpload.bind(this);
+    this.handleCancel = this.handleCancel.bind(this);
     this.handleTaskSaved = this.handleTaskSaved.bind(this);
     this.viewMap = this.viewMap.bind(this);
     this.handleDelete = this.handleDelete.bind(this);
@@ -139,10 +140,11 @@ class ProjectListItem extends React.Component {
           url : 'TO_BE_CHANGED',
           parallelUploads: 6,
           uploadMultiple: false,
-          acceptedFiles: "image/*,text/*,.las,.laz,video/*,.srt",
+          acceptedFiles: "image/*,text/plain,.las,.laz,video/*,.srt",
           autoProcessQueue: false,
           createImageThumbnails: false,
           clickable: this.uploadButton,
+          maxFilesize: 131072, // 128G
           chunkSize: 2147483647,
           timeout: 2147483647,
           
@@ -191,7 +193,7 @@ class ProjectListItem extends React.Component {
         .on("complete", (file) => {
             // Retry
             const retry = () => {
-                const MAX_RETRIES = 10;
+                const MAX_RETRIES = 20;
 
                 if (file.retries < MAX_RETRIES){
                     // Update progress
@@ -207,7 +209,9 @@ class ProjectListItem extends React.Component {
                     file.deltaBytesSent = 0;
                     file.trackedBytesSent = 0;
                     file.retries++;
-                    this.dz.processQueue();
+                    setTimeout(() => {
+                      this.dz.processQueue();
+                    }, 5000 * file.retries);
                 }else{
                     throw new Error(interpolate(_('Cannot upload %(filename)s, exceeded max retries (%(max_retries)s)'), {filename: file.name, max_retries: MAX_RETRIES}));
                 }
@@ -215,11 +219,19 @@ class ProjectListItem extends React.Component {
 
             try{
                 if (file.status === "error"){
+                    if ((file.size / 1024 / 1024) > this.dz.options.maxFilesize) {
+                        // Delete from upload queue
+                        this.setUploadState({
+                            totalCount: this.state.upload.totalCount - 1,
+                            totalBytes: this.state.upload.totalBytes - file.size
+                        });
+                        throw new Error(interpolate(_('Cannot upload %(filename)s, file is too large! Default MaxFileSize is %(maxFileSize)s MB!'), { filename: file.name, maxFileSize: this.dz.options.maxFilesize }));
+                    }
                     retry();
                 }else{
                     // Check response
                     let response = JSON.parse(file.xhr.response);
-                    if (response.success){
+                    if (response.success && response.uploaded && response.uploaded[file.name] === file.size){
                         // Update progress by removing the tracked progress and 
                         // use the file size as the true number of bytes
                         let totalBytesSent = this.state.upload.totalBytesSent + file.size;
@@ -239,13 +251,19 @@ class ProjectListItem extends React.Component {
                     }
                 }
             }catch(e){
-                this.setUploadState({error: `${e.message}`, uploading: false});
-                this.dz.cancelUpload();
+                if (this.manuallyCanceled){
+                  // Manually canceled, ignore error
+                  this.setUploadState({uploading: false});
+                }else{
+                  this.setUploadState({error: `${e.message}`, uploading: false});
+                }
+
+                if (this.dz.files.length) this.dz.cancelUpload();
             }
         })
         .on("queuecomplete", () => {
             const remainingFilesCount = this.state.upload.totalCount - this.state.upload.uploadedCount;
-            if (remainingFilesCount === 0){
+            if (remainingFilesCount === 0 && this.state.upload.uploadedCount > 0){
                 // All files have uploaded!
                 this.setUploadState({uploading: false});
 
@@ -266,7 +284,6 @@ class ProjectListItem extends React.Component {
             }else if (this.dz.getQueuedFiles() === 0){
                 // Done but didn't upload all?
                 this.setUploadState({
-                    totalCount: this.state.upload.totalCount - remainingFilesCount,
                     uploading: false,
                     error: interpolate(_('%(count)s files cannot be uploaded. As a reminder, only images (.jpg, .tif, .png) and GCP files (.txt) can be uploaded. Try again.'), { count: remainingFilesCount })
                 });
@@ -323,8 +340,24 @@ class ProjectListItem extends React.Component {
     this.setUploadState({error: ""});
   }
 
-  cancelUpload(e){
+  cancelUpload(){
     this.dz.removeAllFiles(true);
+  }
+
+  handleCancel(){
+    this.manuallyCanceled = true;
+    this.cancelUpload();
+    if (this.dz._taskInfo && this.dz._taskInfo.id !== undefined){
+      $.ajax({
+        url: `/api/projects/${this.state.data.id}/tasks/${this.dz._taskInfo.id}/remove/`,
+        contentType: 'application/json',
+        dataType: 'json',
+        type: 'POST'
+      });
+    }
+    setTimeout(() => {
+      this.manuallyCanceled = false;
+    }, 500);
   }
 
   taskDeleted(){
@@ -400,6 +433,20 @@ class ProjectListItem extends React.Component {
     this.editProjectDialog.show();
   }
 
+  handleHideProject = (deleteWarning, deleteAction) => {
+    return () => {
+      if (window.confirm(deleteWarning)){
+        this.setState({error: "", refreshing: true});
+        deleteAction()
+          .fail(e => {
+            this.setState({error: e.message || (e.responseJSON || {}).detail || e.responseText || _("Could not delete item")});
+          }).always(() => {
+            this.setState({refreshing: false});
+          });
+      }
+    }
+  }
+
   updateProject(project){
     return $.ajax({
         url: `/api/projects/${this.state.data.id}/edit/`,
@@ -429,7 +476,7 @@ class ProjectListItem extends React.Component {
     this.setState({importing: false});
   }
 
-  handleTaskTitleHint = () => {
+  handleTaskTitleHint = (hasGPSCallback) => {
       return new Promise((resolve, reject) => {
           if (this.state.upload.files.length > 0){
 
@@ -454,32 +501,27 @@ class ProjectListItem extends React.Component {
                 interop: false,
                 ifd1: false // thumbnail
               };
-              exifr.parse(f, options).then(gps => {
-                if (!gps.latitude || !gps.longitude){
+              exifr.parse(f, options).then(exif => {
+                if (!exif.latitude || !exif.longitude){
                     reject();
                     return;
                 }
 
-                let dateTime = gps["36867"];
+                if (hasGPSCallback !== undefined) hasGPSCallback();
 
-                // Try to parse the date from EXIF to JS
-                const parts = dateTime.split(" ");
-                if (parts.length == 2){
-                    let [ d, t ] = parts;
-                    d = d.replace(/:/g, "-");
-                    const tm = Date.parse(`${d} ${t}`);
-                    if (!isNaN(tm)){
-                        dateTime = new Date(tm).toLocaleDateString();
-                    }
-                }
+                let dateTime = exif.DateTimeOriginal;
+                if (dateTime && dateTime.toLocaleDateString) dateTime = dateTime.toLocaleDateString();
                 
                 // Fallback to file modified date if 
                 // no exif info is available
-                if (!dateTime) dateTime = f.lastModifiedDate.toLocaleDateString();
+                if (!dateTime){
+                  if (f.lastModifiedDate) dateTime = f.lastModifiedDate.toLocaleDateString();
+                  else if (f.lastModified) dateTime = new Date(f.lastModified).toLocaleDateString();
+                }
 
                 // Query nominatim OSM
                 $.ajax({
-                    url: `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${gps.latitude}&lon=${gps.longitude}`,
+                    url: `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${exif.latitude}&lon=${exif.longitude}`,
                     contentType: 'application/json',
                     type: 'GET'
                 }).done(json => {
@@ -591,12 +633,12 @@ class ProjectListItem extends React.Component {
                       onClick={this.handleUpload}
                       ref={this.setRef("uploadButton")}>
                   <i className="glyphicon glyphicon-upload"></i>
-                  {_("Select Images and GCP")}
+                  <span className="hidden-xs">{_("Select Images and GCP")}</span>
                 </button>
                 <button type="button" 
                       className="btn btn-default btn-sm"
                       onClick={this.handleImportTask}>
-                  <i className="glyphicon glyphicon-import"></i> {_("Import")}
+                  <i className="glyphicon glyphicon-import"></i> <span className="hidden-xs">{_("Import")}</span>
                 </button>
                 {this.state.buttons.map((button, i) => <React.Fragment key={i}>{button}</React.Fragment>)}
               </div>
@@ -605,7 +647,7 @@ class ProjectListItem extends React.Component {
             <button disabled={this.state.upload.error !== ""} 
                     type="button"
                     className={"btn btn-danger btn-sm " + (!this.state.upload.uploading ? "hide" : "")} 
-                    onClick={this.cancelUpload}>
+                    onClick={this.handleCancel}>
               <i className="glyphicon glyphicon-remove-circle"></i>
               Cancel Upload
             </button> 
@@ -681,6 +723,12 @@ class ProjectListItem extends React.Component {
                 [<i key="edit-icon" className='far fa-edit'></i>
                 ,<a key="edit-text" href="javascript:void(0);" onClick={this.handleEditProject}> {_("Edit")}
                 </a>]
+            : ""}
+
+            {!canEdit && !data.owned ? 
+              [<i key="edit-icon" className='far fa-eye-slash'></i>
+              ,<a key="edit-text" href="javascript:void(0);" onClick={this.handleHideProject(deleteWarning, this.handleDelete)}> {_("Delete")}
+              </a>]
             : ""}
 
           </div>
