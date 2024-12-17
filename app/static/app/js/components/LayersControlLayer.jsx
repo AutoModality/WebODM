@@ -184,8 +184,8 @@ export default class LayersControlLayer extends React.Component {
                 for (let b in statistics){
                     // consider up to the first three bands
                     if(Number(b) <= 3) {
-                        min = Math.min(min, statistics[b]["min"]);
-                        max = Math.max(max, statistics[b]["max"]);
+                        min = Math.min(statistics[b]["percentiles"][0], min);
+                        max = Math.max(statistics[b]["percentiles"][1], max);
                     }
                 }
                 this.rescale = `${min},${max}`;

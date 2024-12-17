@@ -201,18 +201,11 @@ class Map extends React.Component {
                     // Add rescale
                     let min = Infinity;
                     let max = -Infinity;
-                    if (type === 'plant' || type === "dsm" || type === "dtm" || type === "ndsm"){
-                      // percentile
-                      min = statistics["1"]["percentiles"][0];
-                      max = statistics["1"]["percentiles"][1];
-                    }else{
-                      // min/max
-                      for (let b in statistics){
-                        // consider up to the first three bands
-                        if(Number(b) <= 3) {
-                          min = Math.min(min, statistics[b]["min"]);
-                          max = Math.max(max, statistics[b]["max"]);
-                        }
+                    for (let b in statistics){
+                      // consider up to the first three bands
+                      if(Number(b) <= 3) {
+                          min = Math.min(statistics[b]["percentiles"][0], min);
+                          max = Math.max(statistics[b]["percentiles"][1], max);
                       }
                     }
                     params["rescale"] = encodeURIComponent(`${min},${max}`);
