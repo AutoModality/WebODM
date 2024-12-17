@@ -28,7 +28,7 @@ export default class LayersControlLayer extends React.Component {
     super(props);
 
     this.map = props.map;
-    
+
     const url = this.getLayerUrl();
     const params = Utils.queryParams({search: url.slice(url.indexOf("?"))});
 
@@ -113,7 +113,7 @@ export default class LayersControlLayer extends React.Component {
   handleZoomToClick = () => {
     const { layer } = this.props;
 
-    const bounds = layer.options.bounds !== undefined ? 
+    const bounds = layer.options.bounds !== undefined ?
                    layer.options.bounds :
                    layer.getBounds();
     this.map.fitBounds(bounds);
@@ -174,7 +174,7 @@ export default class LayersControlLayer extends React.Component {
     this.updateHistogramReq = $.getJSON(Utils.buildUrlWithQuery(this.meta.metaUrl, this.getLayerParams()))
         .done(mres => {
             this.tmeta = this.props.layer[Symbol.for("tile-meta")] = mres;
-            
+
             // Update rescale values
             const { statistics } = this.tmeta;
             if (statistics && statistics["1"]){
@@ -182,8 +182,11 @@ export default class LayersControlLayer extends React.Component {
                 let max = -Infinity;
 
                 for (let b in statistics){
-                    min = Math.min(statistics[b]["percentiles"][0]);
-                    max = Math.max(statistics[b]["percentiles"][1]);
+                    // consider up to the first three bands
+                    if(Number(b) <= 3) {
+                        min = Math.min(min, statistics[b]["min"]);
+                        max = Math.max(max, statistics[b]["max"]);
+                    }
                 }
                 this.rescale = `${min},${max}`;
             }
@@ -201,7 +204,7 @@ export default class LayersControlLayer extends React.Component {
         formula,
         bands,
         hillshade } = this.state;
-    
+
     return {
         color_map: colorMap,
         formula,
@@ -211,7 +214,7 @@ export default class LayersControlLayer extends React.Component {
         size: 512
     };
   }
-  
+
   updateLayer = () => {
       if (this.updateTimer){
           clearTimeout(this.updateTimer);
@@ -224,7 +227,7 @@ export default class LayersControlLayer extends React.Component {
         const newUrl = Utils.buildUrlWithQuery(url, this.getLayerParams());
 
         layer.setUrl(newUrl, true);
-            
+
         // Hack to get leaflet to actually redraw tiles :/
         layer._removeAllTiles();
         setTimeout(() => {
@@ -242,11 +245,11 @@ export default class LayersControlLayer extends React.Component {
       const { formula } = this.state;
       const { tmeta } = this;
       const { algorithms } = tmeta;
-      
+
       // Plant health needs to be exported
       if (formula !== "" && algorithms){
         this.setState({exportLoading: true, error: ""});
-        
+
         this.exportReq = $.ajax({
                 type: 'POST',
                 url: `/api/projects/${this.meta.task.project}/tasks/${this.meta.task.id}/orthophoto/export`,
@@ -301,7 +304,7 @@ export default class LayersControlLayer extends React.Component {
             <a title={meta.name} className="layer-label" href="javascript:void(0);" onClick={this.handleLayerClick}><i className={"layer-icon " + (meta.icon || "fa fa-vector-square fa-fw")}></i><div className="layer-title">{meta.name}</div></a> <a className="layer-action" href="javascript:void(0)" onClick={this.handleZoomToClick}><i title={_("Zoom To")} className="fa fa-expand"></i></a>
         </div>
 
-        {this.state.expanded ? 
+        {this.state.expanded ?
         <div className="layer-expanded">
             <Histogram width={274}
                         loading={histogramLoading}
@@ -315,11 +318,11 @@ export default class LayersControlLayer extends React.Component {
 
             <ErrorMessage bind={[this, "error"]} />
 
-            {formula !== "" && algorithms ? 
+            {formula !== "" && algorithms ?
             <div className="row form-group form-inline">
                 <label className="col-sm-3 control-label">{_("Algorithm:")}</label>
                 <div className="col-sm-9 ">
-                    {histogramLoading ? 
+                    {histogramLoading ?
                     <i className="fa fa-circle-notch fa-spin fa-fw" /> :
                     <select title={algo.help + '\n' + algo.expr} className="form-control" value={formula} onChange={this.handleSelectFormula}>
                         {algorithms.map(a => <option key={a.id} value={a.id} title={a.help + "\n" + a.expr}>{a.id}</option>)}
@@ -327,27 +330,27 @@ export default class LayersControlLayer extends React.Component {
                 </div>
             </div> : ""}
 
-            {bands !== "" && algo ? 
+            {bands !== "" && algo ?
             <div className="row form-group form-inline">
                 <label className="col-sm-3 control-label">{_("Bands:")}</label>
                 <div className="col-sm-9 ">
-                    {histogramLoading ? 
+                    {histogramLoading ?
                     <i className="fa fa-circle-notch fa-spin fa-fw" /> :
                     [<select key="sel" className="form-control" value={bands} onChange={this.handleSelectBands} title={auto_bands.filter !== "" && bands == "auto" ? auto_bands.filter : ""}>
                         <option key="auto" value="auto">{_("Automatic")}</option>
                         {algo.filters.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>,
-                    bands == "auto" && !auto_bands.match ? 
+                    bands == "auto" && !auto_bands.match ?
                     <i key="ico" style={{marginLeft: '4px'}} title={interpolate(_("Not every band for %(name)s could be automatically identified."), {name: algo.id}) + "\n" + _("Your sensor might not have the proper bands for using this algorithm.")} className="fa fa-exclamation-circle info-button"></i>
                     : ""]}
                 </div>
             </div> : ""}
 
-            {colorMap && color_maps.length ? 
+            {colorMap && color_maps.length ?
             <div className="row form-group form-inline">
                 <label className="col-sm-3 control-label">{_("Color:")}</label>
                 <div className="col-sm-9 ">
-                    {histogramLoading ? 
+                    {histogramLoading ?
                     <i className="fa fa-circle-notch fa-spin fa-fw" /> :
                     <select className="form-control" value={colorMap} onChange={this.handleSelectColor}>
                         {color_maps.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
@@ -355,7 +358,7 @@ export default class LayersControlLayer extends React.Component {
                 </div>
             </div> : ""}
 
-            {hillshade !== "" ? 
+            {hillshade !== "" ?
             <div className="row form-group form-inline">
                 <label className="col-sm-3 control-label">{_("Shading:")}</label>
                 <div className="col-sm-9 ">
@@ -367,9 +370,9 @@ export default class LayersControlLayer extends React.Component {
                 </div>
             </div> : ""}
 
-            <ExportAssetPanel task={meta.task} 
-                            asset={this.asset} 
-                            exportParams={this.getLayerParams} 
+            <ExportAssetPanel task={meta.task}
+                            asset={this.asset}
+                            exportParams={this.getLayerParams}
                             dropUp />
         </div> : ""}
     </div>);
