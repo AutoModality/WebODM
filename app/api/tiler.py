@@ -402,7 +402,7 @@ class Tiles(TaskNestedView):
                     indexes = non_alpha_indexes(src.dataset)
                     # Return the last band for 2-band imagery
                     if len(indexes) < 3 and expr is None:
-                        expr = 'b' + str(len(indexes) - 1)
+                        expr = 'b' + str(len(indexes))
 
             # Workaround for https://github.com/OpenDroneMap/WebODM/issues/894
             if nodata is None and tile_type == 'orthophoto':
