@@ -7,6 +7,7 @@ from django.shortcuts import render
 
 from app.api.tasks import TaskSerializer
 from app.models import Task
+from app.views.utils import get_permissions
 from django.views.decorators.csrf import ensure_csrf_cookie
 from webodm import settings
 
@@ -29,7 +30,10 @@ def handle_map(request, template, task_pk=None, hide_title=False):
             'map-items': json.dumps([task.get_map_items()]),
             'title': task.name if not hide_title else '',
             'public': 'true',
-            'share-buttons': 'false' if settings.DESKTOP_MODE else 'true'
+            'public-edit': str(task.public_edit).lower(),
+            'share-buttons': 'false' if settings.DESKTOP_MODE else 'true',
+            'selected-map-type': request.GET.get('t', 'auto'),
+            'permissions': json.dumps(get_permissions(request.user, task.project))
         }.items()
     })
 
@@ -48,7 +52,9 @@ def handle_model_display(request, template, task_pk=None):
             'params': {
                 'task': json.dumps(task.get_model_display_params()),
                 'public': 'true',
-                'share-buttons': 'false' if settings.DESKTOP_MODE else 'true'
+                'public-edit': str(task.public_edit).lower(),
+                'share-buttons': 'false' if settings.DESKTOP_MODE else 'true',
+                'model-type': request.GET.get('t', 'cloud'),
             }.items()
         })
 

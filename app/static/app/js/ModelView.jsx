@@ -10,6 +10,7 @@ import PropTypes from 'prop-types';
 import * as THREE from 'THREE';
 import $ from 'jquery';
 import { _, interpolate } from './classes/gettext';
+import { getUnitSystem, setUnitSystem } from './classes/Units';
 
 require('./vendor/OBJLoader');
 require('./vendor/MTLLoader');
@@ -69,14 +70,19 @@ class SetCameraView extends React.Component{
 
 class TexturedModelMenu extends React.Component{
     static propTypes = {
-        toggleTexturedModel: PropTypes.func.isRequired
+        toggleTexturedModel: PropTypes.func.isRequired,
+        selected: PropTypes.bool
+    }
+
+    static defaultProps = {
+        selected: false
     }
 
     constructor(props){
         super(props);
 
         this.state = {
-            showTexturedModel: false
+            showTexturedModel: props.selected
         }
         
         // Translation for sidebar.html
@@ -128,13 +134,15 @@ class ModelView extends React.Component {
   static defaultProps = {
     task: null,
     public: false,
-    shareButtons: true
+    shareButtons: true,
+    modelType: "cloud"
   };
 
   static propTypes = {
       task: PropTypes.object.isRequired, // The object should contain two keys: {id: <taskId>, project: <projectId>}
       public: PropTypes.bool, // Is the view being displayed via a shared link?
-      shareButtons: PropTypes.bool
+      shareButtons: PropTypes.bool,
+      modelType: PropTypes.oneOf(['cloud', 'mesh'])
   };
 
   constructor(props){
@@ -142,7 +150,7 @@ class ModelView extends React.Component {
 
     this.state = {
       error: "",
-      showTexturedModel: false,
+      showingTexturedModel: false,
       initializingModel: false,
       selectedCamera: null,
       modalOpen: false
@@ -298,9 +306,23 @@ class ModelView extends React.Component {
     window.viewer = new Potree.Viewer(container);
     viewer.setEDLEnabled(true);
     viewer.setFOV(60);
-    viewer.setPointBudget(1*1000*1000);
+    viewer.setPointBudget(10*1000*1000);
     viewer.setEDLEnabled(true);
     viewer.loadSettingsFromURL();
+
+    const currentUnit = getUnitSystem();
+    const origSetUnit = viewer.setLengthUnitAndDisplayUnit;
+    viewer.setLengthUnitAndDisplayUnit = (lengthUnit, displayUnit) => {
+        if (displayUnit === 'm') setUnitSystem('metric');
+        else if (displayUnit === 'ft'){
+            // Potree doesn't have US/international imperial, so 
+            // we default to international unless the user has previously
+            // selected US
+            if (currentUnit === 'metric') setUnitSystem("imperial");
+            else setUnitSystem(currentUnit);
+        }
+        origSetUnit.call(viewer, lengthUnit, displayUnit);
+    };
         
     viewer.loadGUI(() => {
       viewer.setLanguage('en');
@@ -308,7 +330,7 @@ class ModelView extends React.Component {
       viewer.toggleSidebar();
 
       if (this.hasTexturedModel()){
-          window.ReactDOM.render(<TexturedModelMenu toggleTexturedModel={this.toggleTexturedModel}/>, $("#textured_model_button").get(0));
+          window.ReactDOM.render(<TexturedModelMenu selected={this.props.modelType === 'mesh'} toggleTexturedModel={this.toggleTexturedModel}/>, $("#textured_model_button").get(0));
       }else{
           $("#textured_model").hide();
           $("#textured_model_container").hide();
@@ -335,11 +357,16 @@ class ModelView extends React.Component {
     directional.position.z = 99999999999;
     viewer.scene.scene.add( directional );
 
-    this.pointCloudFilePath(pointCloudPath => {
+    this.pointCloudFilePath(pointCloudPath =>{ 
         Potree.loadPointCloud(pointCloudPath, "Point Cloud", e => {
           if (e.type == "loading_failed"){
             this.setState({error: "Could not load point cloud. This task doesn't seem to have one. Try processing the task again."});
             return;
+          }
+
+          // Automatically load 3D model if required
+          if (this.hasTexturedModel() && this.props.modelType === "mesh"){
+            this.toggleTexturedModel({ target: { checked: true }});
           }
     
           let scene = viewer.scene;
@@ -350,6 +377,12 @@ class ModelView extends React.Component {
           material.size = 1;
 
           viewer.fitToScreen();
+
+          if (getUnitSystem() === 'metric'){
+              viewer.setLengthUnitAndDisplayUnit('m', 'm');
+          }else{
+              viewer.setLengthUnitAndDisplayUnit('m', 'ft');
+          }
 
           // Load saved scene (if any)
           $.ajax({
@@ -590,8 +623,10 @@ class ModelView extends React.Component {
     }
 
     const isVisible = this.cameraMeshes[0].visible;
-    this.cameraMeshes.forEach(cam => cam.visible = !isVisible);
-    this.cameraMeshes[0].traverseAncestors(a => a.visible = !isVisible);
+    this.cameraMeshes.forEach(cam => {
+        cam.visible = !isVisible;
+        cam.parent.visible = cam.visible;
+    });
   }
 
   loadGltf = (url, cb) => {
@@ -632,6 +667,7 @@ class ModelView extends React.Component {
 
             this.setState({
                 initializingModel: false,
+                showingTexturedModel: true
             });
         }
 
@@ -642,9 +678,10 @@ class ModelView extends React.Component {
                     return;
                 }
 
-                const offset = {
-                    x: gltf.scene.CESIUM_RTC.center[0],
-                    y: gltf.scene.CESIUM_RTC.center[1]
+                const offset = {x: 0, y: 0};
+                if (gltf.scene.CESIUM_RTC && gltf.scene.CESIUM_RTC.center){
+                    offset.x = gltf.scene.CESIUM_RTC.center[0];
+                    offset.y = gltf.scene.CESIUM_RTC.center[1];
                 }
 
                 addObject(gltf.scene, offset);
@@ -675,17 +712,23 @@ class ModelView extends React.Component {
         // Already initialized
         this.modelReference.visible = true;
         this.setPointCloudsVisible(false);
+        this.setState({showingTexturedModel: true});
       }
     }else{
       this.modelReference.visible = false;
       this.setPointCloudsVisible(true);
+      this.setState({showingTexturedModel: false});
     }
   }
 
   // React render
   render(){
-    const { selectedCamera } = this.state;
+    const { selectedCamera, showingTexturedModel } = this.state;
     const { task } = this.props;
+    const queryParams = {};
+    if (showingTexturedModel){
+        queryParams.t = "mesh";
+    }
 
     return (<div className="model-view">
           <ErrorMessage bind={[this, "error"]} />
@@ -711,6 +754,7 @@ class ModelView extends React.Component {
                 task={this.props.task} 
                 popupPlacement="top"
                 linksTarget="3d"
+                queryParams={queryParams}
             />
             : ""}
             <SwitchModeButton 

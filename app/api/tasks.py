@@ -1,14 +1,18 @@
 import os
+import re
+import shutil
 from wsgiref.util import FileWrapper
 
 import mimetypes
 
-from shutil import copyfileobj
+from shutil import copyfileobj, move
 from django.core.exceptions import ObjectDoesNotExist, SuspiciousFileOperation, ValidationError
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.db import transaction
 from django.http import FileResponse
 from django.http import HttpResponse
+from django.http import StreamingHttpResponse
+from app.vendor import zipfly
 from rest_framework import status, serializers, viewsets, filters, exceptions, permissions, parsers
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -23,7 +27,7 @@ from .common import get_and_check_project, get_asset_download_filename
 from .tags import TagsField
 from app.security import path_traversal_check
 from django.utils.translation import gettext_lazy as _
-
+from webodm import settings
 
 def flatten_files(request_files):
     # MultiValueDict in, flat array of files out
@@ -38,7 +42,7 @@ class TaskIDsSerializer(serializers.BaseSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     project = serializers.PrimaryKeyRelatedField(queryset=models.Project.objects.all())
-    processing_node = serializers.PrimaryKeyRelatedField(queryset=ProcessingNode.objects.all()) 
+    processing_node = serializers.PrimaryKeyRelatedField(queryset=ProcessingNode.objects.all())
     processing_node_name = serializers.SerializerMethodField()
     can_rerun_from = serializers.SerializerMethodField()
     statistics = serializers.SerializerMethodField()
@@ -74,8 +78,8 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Task
-        exclude = ('console_output', 'orthophoto_extent', 'dsm_extent', 'dtm_extent', )
-        read_only_fields = ('processing_time', 'status', 'last_error', 'created_at', 'pending_action', 'available_assets', )
+        exclude = ('orthophoto_extent', 'dsm_extent', 'dtm_extent', )
+        read_only_fields = ('processing_time', 'status', 'last_error', 'created_at', 'pending_action', 'available_assets', 'size', )
 
 class TaskViewSet(viewsets.ViewSet):
     """
@@ -83,8 +87,8 @@ class TaskViewSet(viewsets.ViewSet):
     A task represents a set of images and other input to be sent to a processing node.
     Once a processing node completes processing, results are stored in the task.
     """
-    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', 'console_output', )
-    
+    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', )
+
     parser_classes = (parsers.MultiPartParser, parsers.JSONParser, parsers.FormParser, )
     ordering_fields = '__all__'
 
@@ -145,8 +149,7 @@ class TaskViewSet(viewsets.ViewSet):
             raise exceptions.NotFound()
 
         line_num = max(0, int(request.query_params.get('line', 0)))
-        output = task.console_output or ""
-        return Response('\n'.join(output.rstrip().split('\n')[line_num:]))
+        return Response('\n'.join(task.console.output().rstrip().split('\n')[line_num:]))
 
     def list(self, request, project_pk=None):
         get_and_check_project(request, project_pk)
@@ -181,9 +184,10 @@ class TaskViewSet(viewsets.ViewSet):
         task.partial = False
         task.images_count = len(task.scan_images())
 
-        if task.images_count < 2:
-            raise exceptions.ValidationError(detail=_("You need to upload at least 2 images before commit"))
+        if task.images_count < 1:
+            raise exceptions.ValidationError(detail=_("You need to upload at least 1 file before commit"))
 
+        task.update_size()
         task.save()
         worker_tasks.process_task.delay(task.id)
 
@@ -202,18 +206,17 @@ class TaskViewSet(viewsets.ViewSet):
             raise exceptions.NotFound()
 
         files = flatten_files(request.FILES)
-
         if len(files) == 0:
             raise exceptions.ValidationError(detail=_("No files uploaded"))
 
-        task.handle_images_upload(files)
+        uploaded = task.handle_images_upload(files)
         task.images_count = len(task.scan_images())
         # Update other parameters such as processing node, task name, etc.
         serializer = TaskSerializer(task, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        
-        return Response({'success': True}, status=status.HTTP_200_OK)
+
+        return Response({'success': True, 'uploaded': uploaded}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None, project_pk=None):
@@ -295,7 +298,7 @@ class TaskViewSet(viewsets.ViewSet):
 
 
 class TaskNestedView(APIView):
-    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dsm_extent', 'dtm_extent', 'console_output', )
+    queryset = models.Task.objects.all().defer('orthophoto_extent', 'dtm_extent', 'dsm_extent', )
     permission_classes = (AllowAny, )
 
     def get_and_check_task(self, request, pk, annotate={}):
@@ -313,7 +316,7 @@ class TaskNestedView(APIView):
 
 def download_file_response(request, filePath, content_disposition, download_filename=None):
     filename = os.path.basename(filePath)
-    if download_filename is None: 
+    if download_filename is None:
         download_filename = filename
     filesize = os.stat(filePath).st_size
     file = open(filePath, "rb")
@@ -339,15 +342,20 @@ def download_file_response(request, filePath, content_disposition, download_file
 
 
 def download_file_stream(request, stream, content_disposition, download_filename=None):
-    response = HttpResponse(FileWrapper(stream),
-                            content_type=(mimetypes.guess_type(download_filename)[0] or "application/zip"))
+    if isinstance(stream, zipfly.ZipStream):
+        f = stream.generator()
+    else:
+        # This should never happen, but just in case..
+        raise exceptions.ValidationError("stream not a zipstream instance")
+
+    response = StreamingHttpResponse(f, content_type=(mimetypes.guess_type(download_filename)[0] or "application/zip"))
 
     response['Content-Type'] = mimetypes.guess_type(download_filename)[0] or "application/zip"
     response['Content-Disposition'] = "{}; filename={}".format(content_disposition, download_filename)
 
     # For testing
     response['_stream'] = 'yes'
-    
+
     return response
 
 
@@ -364,19 +372,20 @@ class TaskDownloads(TaskNestedView):
 
         # Check and download
         try:
-            asset_fs, is_zipstream = task.get_asset_file_or_zipstream(asset)
+            asset_fs = task.get_asset_file_or_stream(asset)
         except FileNotFoundError:
             raise exceptions.NotFound(_("Asset does not exist"))
 
-        if not is_zipstream and not os.path.isfile(asset_fs):
+        is_stream = not isinstance(asset_fs, str)
+        if not is_stream and not os.path.isfile(asset_fs):
             raise exceptions.NotFound(_("Asset does not exist"))
-        
+
         download_filename = request.GET.get('filename', get_asset_download_filename(task, asset))
 
-        if not is_zipstream:
-            return download_file_response(request, asset_fs, 'attachment', download_filename=download_filename)
-        else:
+        if is_stream:
             return download_file_stream(request, asset_fs, 'attachment', download_filename=download_filename)
+        else:
+            return download_file_response(request, asset_fs, 'attachment', download_filename=download_filename)
 
 """
 Raw access to the task's asset folder resources
@@ -401,6 +410,26 @@ class TaskAssets(TaskNestedView):
         return download_file_response(request, asset_path, 'inline')
 
 """
+Task backup endpoint
+"""
+class TaskBackup(TaskNestedView):
+    def get(self, request, pk=None, project_pk=None):
+        """
+        Downloads a task's backup
+        """
+        task = self.get_and_check_task(request, pk)
+
+        # Check and download
+        try:
+            asset_fs = task.get_task_backup_stream()
+        except FileNotFoundError:
+            raise exceptions.NotFound(_("Asset does not exist"))
+
+        download_filename = request.GET.get('filename', get_asset_download_filename(task, "backup.zip"))
+
+        return download_file_stream(request, asset_fs, 'attachment', download_filename=download_filename)
+
+"""
 Task assets import
 """
 class TaskAssetsImport(APIView):
@@ -420,18 +449,52 @@ class TaskAssetsImport(APIView):
         if import_url and len(files) > 0:
             raise exceptions.ValidationError(detail=_("Cannot create task, either specify a URL or upload 1 file."))
 
+        chunk_index = request.data.get('dzchunkindex')
+        uuid = request.data.get('dzuuid')
+        total_chunk_count = request.data.get('dztotalchunkcount', None)
+
+        # Chunked upload?
+        tmp_upload_file = None
+        if len(files) > 0 and chunk_index is not None and uuid is not None and total_chunk_count is not None:
+            byte_offset = request.data.get('dzchunkbyteoffset', 0)
+
+            try:
+                chunk_index = int(chunk_index)
+                byte_offset = int(byte_offset)
+                total_chunk_count = int(total_chunk_count)
+            except ValueError:
+                raise exceptions.ValidationError(detail="Some parameters are not integers")
+            uuid = re.sub('[^0-9a-zA-Z-]+', "", uuid)
+
+            tmp_upload_file = os.path.join(settings.FILE_UPLOAD_TEMP_DIR, f"{uuid}.upload")
+            if os.path.isfile(tmp_upload_file) and chunk_index == 0:
+                os.unlink(tmp_upload_file)
+
+            with open(tmp_upload_file, 'ab') as fd:
+                fd.seek(byte_offset)
+                if isinstance(files[0], InMemoryUploadedFile):
+                    for chunk in files[0].chunks():
+                        fd.write(chunk)
+                else:
+                    with open(files[0].temporary_file_path(), 'rb') as file:
+                        fd.write(file.read())
+
+            if chunk_index + 1 < total_chunk_count:
+                return Response({'uploaded': True}, status=status.HTTP_200_OK)
+
+        # Ready to import
         with transaction.atomic():
             task = models.Task.objects.create(project=project,
-                                              auto_processing_node=False,
-                                              name=task_name,
-                                              import_url=import_url if import_url else "file://all.zip",
-                                              status=status_codes.RUNNING,
-                                              pending_action=pending_actions.IMPORT)
+                                            auto_processing_node=False,
+                                            name=task_name,
+                                            import_url=import_url if import_url else "file://all.zip",
+                                            status=status_codes.RUNNING,
+                                            pending_action=pending_actions.IMPORT)
             task.create_task_directories()
+            destination_file = task.assets_path("all.zip")
 
-            if len(files) > 0:
-                destination_file = task.assets_path("all.zip")
-
+            # Non-chunked file import
+            if tmp_upload_file is None and len(files) > 0:
                 with open(destination_file, 'wb+') as fd:
                     if isinstance(files[0], InMemoryUploadedFile):
                         for chunk in files[0].chunks():
@@ -439,6 +502,9 @@ class TaskAssetsImport(APIView):
                     else:
                         with open(files[0].temporary_file_path(), 'rb') as file:
                             copyfileobj(file, fd)
+            elif tmp_upload_file is not None:
+                # Move
+                shutil.move(tmp_upload_file, destination_file)
 
             worker_tasks.process_task.delay(task.id)
 
