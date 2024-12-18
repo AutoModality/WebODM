@@ -375,8 +375,6 @@ class Tiles(TaskNestedView):
             # Handle N-bands datasets for orthophotos (not plant health)
             if tile_type == 'orthophoto' and expr is None:
                 ci = src.dataset.colorinterp
-                indexes = (1, 2, 3,)
-
                 # More than 4 bands?
                 if len(ci) > 4:
                     # Try to find RGBA band order
@@ -396,6 +394,9 @@ class Tiles(TaskNestedView):
                             indexes = (input_bands.index(false_color_bands[0]) + 1,
                                        input_bands.index(false_color_bands[1]) + 1,
                                        input_bands.index(false_color_bands[2]) + 1,)
+                    else:
+                        # Fallback to first three
+                        indexes = (1, 2, 3,)
 
                 elif has_alpha:
                     indexes = non_alpha_indexes(src.dataset)
@@ -434,13 +435,11 @@ class Tiles(TaskNestedView):
                         tile = src.tile(x, y, z, indexes=indexes, tilesize=tilesize, nodata=nodata,
                                         padding=padding,
                                         tile_buffer=tile_buffer,
-                                        # unscale=True if len(indexes) < 3 else False,
                                         resampling_method=resampling, vrt_options={'cutline': boundaries_cutline})
                     else:
                         tile = src.tile(x, y, z, indexes=indexes, tilesize=tilesize, nodata=nodata,
                                         padding=padding,
                                         tile_buffer=tile_buffer,
-                                        # unscale=True if len(indexes) < 3 else False,
                                         resampling_method=resampling)
             except TileOutsideBounds:
                 raise exceptions.NotFound(_("Outside of bounds"))
