@@ -53,7 +53,8 @@ class ImportTaskPanel extends React.Component {
           clickable: this.uploadButton,
           chunkSize: 2147483647,
           timeout: 2147483647,
-          
+          chunking: true,
+          chunkSize: 16000000, // 16MB
           headers: {
             [csrf.header]: csrf.token
           }
@@ -69,6 +70,7 @@ class ImportTaskPanel extends React.Component {
           this.setState({uploading: false, progress: 0, totalBytes: 0, totalBytesSent: 0});
         })
         .on("uploadprogress", (file, progress, bytesSent) => {
+            if (progress == 100) return; // Workaround for chunked upload progress bar jumping around
             this.setState({
               progress,
               totalBytes: file.size,
@@ -156,8 +158,8 @@ class ImportTaskPanel extends React.Component {
           <ErrorMessage bind={[this, 'error']} />
 
           <button type="button" className="close theme-color-primary" title="Close" onClick={this.cancel}><span aria-hidden="true">&times;</span></button>
-          <h4>{_("Import Existing Assets")}</h4>
-          <p><Trans params={{arrow: '<i class="glyphicon glyphicon-arrow-right"></i>'}}>{_("You can import .zip files that have been exported from existing tasks via Download Assets %(arrow)s All Assets.")}</Trans></p>
+          <h4>{_("Import Assets or Backups")}</h4>
+          <p><Trans params={{arrow: '<i class="glyphicon glyphicon-arrow-right"></i>'}}>{_("You can import .zip files that have been exported from existing tasks via Download Assets %(arrow)s All Assets | Backup.")}</Trans></p>
           
           <button disabled={this.state.uploading}
                   type="button" 

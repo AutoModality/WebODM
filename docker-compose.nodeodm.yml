@@ -10,8 +10,8 @@ services:
     environment:
       - WO_DEFAULT_NODES
   node-odm:
-    image: 8065ea9988b0 #opendronemap/nodeodm | 12/3/2021 built
-    ports:
+    image: opendronemap/nodeodm
+    expose:
       - "3000"
     restart: unless-stopped
     oom_score_adj: 500

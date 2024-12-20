@@ -4,6 +4,7 @@ import rio_tiler.utils
 from rasterio.enums import ColorInterp
 from rasterio.crs import CRS
 from rasterio.features import bounds as featureBounds
+from rasterio.errors import NotGeoreferencedWarning
 import urllib
 import os
 from .common import get_asset_download_filename
@@ -17,20 +18,26 @@ from rio_tiler.models import Metadata as RioMetadata
 from rio_tiler.profiles import img_profiles
 from rio_tiler.colormap import cmap as colormap, apply_cmap
 from rio_tiler.io import COGReader
-from rio_tiler.errors import InvalidColorMapName
+from rio_tiler.errors import InvalidColorMapName, AlphaBandWarning
 from rio_tiler.constants import WGS84_CRS
 import numpy as np
 from .custom_colormaps_helper import custom_colormaps
 from app.raster_utils import extension_for_export_format, ZOOM_EXTRA_LEVELS
 from .hsvblend import hsv_blend
 from .hillshade import LightSource
-from .formulas import lookup_formula, get_algorithm_list
+from .formulas import lookup_formula, get_algorithm_list, get_auto_bands
 from .tasks import TaskNestedView
 from rest_framework import exceptions
 from rest_framework.response import Response
 from worker.tasks import export_raster, export_pointcloud
 from django.utils.translation import gettext as _
+import warnings
 
+# Disable: NotGeoreferencedWarning: Dataset has no geotransform, gcps, or rpcs. The identity matrix be returned.
+warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
+
+# Disable: Alpha band was removed from the output data array
+warnings.filterwarnings("ignore", category=AlphaBandWarning)
 
 for custom_colormap in custom_colormaps:
     colormap = colormap.register(custom_colormap)
@@ -138,6 +145,12 @@ class Metadata(TaskNestedView):
         if boundaries_feature is not None:
             boundaries_feature = json.loads(boundaries_feature)
 
+        is_auto_bands_match = False
+        is_auto_bands = False
+        if bands == 'auto' and formula:
+            is_auto_bands = True
+            bands, is_auto_bands_match = get_auto_bands(task.orthophoto_bands, formula)
+
         pmin, pmax = 2.0, 98.0
         raster_path = get_raster_path(task, tile_type)
         if not os.path.isfile(raster_path):
@@ -198,6 +211,8 @@ class Metadata(TaskNestedView):
             for b in info['statistics']:
                 info['statistics'][b]['min'] = hrange[0]
                 info['statistics'][b]['max'] = hrange[1]
+                info['statistics'][b]['percentiles'][0] = max(hrange[0], info['statistics'][b]['percentiles'][0])
+                info['statistics'][b]['percentiles'][1] = min(hrange[1], info['statistics'][b]['percentiles'][1])
 
         cmap_labels = {
             "viridis": "Viridis",
@@ -221,6 +236,8 @@ class Metadata(TaskNestedView):
 
         colormaps = []
         algorithms = []
+        auto_bands = {'filter': '', 'match': None}
+
         if tile_type in ['dsm', 'dtm', 'ndsm']:
             colormaps = ['viridis', 'jet', 'terrain', 'gist_earth', 'pastel1']
         elif formula and bands:
@@ -228,9 +245,14 @@ class Metadata(TaskNestedView):
                          'better_discrete_ndvi',
                          'viridis', 'plasma', 'inferno', 'magma', 'cividis', 'jet', 'jet_r']
             algorithms = *get_algorithm_list(band_count),
+            if is_auto_bands:
+                auto_bands['filter'] = bands
+                auto_bands['match'] = is_auto_bands_match
 
         info['color_maps'] = []
         info['algorithms'] = algorithms
+        info['auto_bands'] = auto_bands
+
         if colormaps:
             for cmap in colormaps:
                 try:
@@ -251,6 +273,7 @@ class Metadata(TaskNestedView):
         info['maxzoom'] += ZOOM_EXTRA_LEVELS
         info['minzoom'] -= ZOOM_EXTRA_LEVELS
         info['bounds'] = {'value': src.bounds, 'crs': src.dataset.crs}
+
         return Response(info)
 
 
@@ -293,6 +316,8 @@ class Tiles(TaskNestedView):
         if color_map == '': color_map = None
         if hillshade == '' or hillshade == '0': hillshade = None
         if tilesize == '' or tilesize is None: tilesize = 256
+        if bands == 'auto' and formula:
+            bands, _discard_ = get_auto_bands(task.orthophoto_bands, formula)
 
         try:
             tilesize = int(tilesize)
@@ -350,8 +375,6 @@ class Tiles(TaskNestedView):
             # Handle N-bands datasets for orthophotos (not plant health)
             if tile_type == 'orthophoto' and expr is None:
                 ci = src.dataset.colorinterp
-                indexes = (1, 2, 3,)
-
                 # More than 4 bands?
                 if len(ci) > 4:
                     # Try to find RGBA band order
@@ -371,9 +394,15 @@ class Tiles(TaskNestedView):
                             indexes = (input_bands.index(false_color_bands[0]) + 1,
                                        input_bands.index(false_color_bands[1]) + 1,
                                        input_bands.index(false_color_bands[2]) + 1,)
+                    else:
+                        # Fallback to first three
+                        indexes = (1, 2, 3,)
 
                 elif has_alpha:
                     indexes = non_alpha_indexes(src.dataset)
+                    # Return the last band for 2-band imagery
+                    if len(indexes) < 3 and expr is None:
+                        expr = 'b' + str(len(indexes))
 
             # Workaround for https://github.com/OpenDroneMap/WebODM/issues/894
             if nodata is None and tile_type == 'orthophoto':
@@ -390,7 +419,7 @@ class Tiles(TaskNestedView):
             # Hillshading is not a local tile operation and
             # requires neighbor tiles to be rendered seamlessly
             if hillshade is not None:
-                tile_buffer = tilesize
+                tile_buffer = 16
 
             try:
                 if expr is not None:
@@ -409,13 +438,11 @@ class Tiles(TaskNestedView):
                         tile = src.tile(x, y, z, indexes=indexes, tilesize=tilesize, nodata=nodata,
                                         padding=padding,
                                         tile_buffer=tile_buffer,
-                                        # unscale=True if len(indexes) < 3 else False,
                                         resampling_method=resampling, vrt_options={'cutline': boundaries_cutline})
                     else:
                         tile = src.tile(x, y, z, indexes=indexes, tilesize=tilesize, nodata=nodata,
                                         padding=padding,
                                         tile_buffer=tile_buffer,
-                                        # unscale=True if len(indexes) < 3 else False,
                                         resampling_method=resampling)
             except TileOutsideBounds:
                 raise exceptions.NotFound(_("Outside of bounds"))
@@ -466,17 +493,17 @@ class Tiles(TaskNestedView):
                 # Remove elevation data from edge buffer tiles
                 # (to keep intensity uniform across tiles)
                 elevation = tile.data[0]
-                elevation[0:tilesize, 0:tilesize] = nodata
-                elevation[tilesize*2:tilesize*3, 0:tilesize] = nodata
-                elevation[0:tilesize, tilesize*2:tilesize*3] = nodata
-                elevation[tilesize*2:tilesize*3, tilesize*2:tilesize*3] = nodata
+                elevation[0:tile_buffer, 0:tile_buffer] = nodata
+                elevation[tile_buffer+tilesize:tile_buffer*2+tilesize, 0:tile_buffer] = nodata
+                elevation[0:tile_buffer, tile_buffer+tilesize:tile_buffer*2+tilesize] = nodata
+                elevation[tile_buffer+tilesize:tile_buffer*2+tilesize, tile_buffer+tilesize:tile_buffer*2+tilesize] = nodata
 
                 intensity = ls.hillshade(elevation, dx=dx, dy=dy, vert_exag=hillshade)
-                intensity = intensity[tilesize:tilesize * 2, tilesize:tilesize * 2]
+                intensity = intensity[tile_buffer:tile_buffer+tilesize, tile_buffer:tile_buffer+tilesize]
 
             if intensity is not None:
                 rgb = tile.post_process(in_range=(rescale_arr,))
-                rgb_data = rgb.data[:,tilesize:tilesize * 2, tilesize:tilesize * 2]
+                rgb_data = rgb.data[:,tile_buffer:tilesize+tile_buffer, tile_buffer:tilesize+tile_buffer]
                 if colormap:
                     rgb, _discard_ = apply_cmap(rgb_data, colormap.get(color_map))
                 if rgb.data.shape[0] != 3:
@@ -485,7 +512,7 @@ class Tiles(TaskNestedView):
                 intensity = intensity * 255.0
                 rgb = hsv_blend(rgb, intensity)
                 if rgb is not None:
-                    mask = tile.mask[tilesize:tilesize * 2, tilesize:tilesize * 2]
+                    mask = tile.mask[tile_buffer:tilesize+tile_buffer, tile_buffer:tilesize+tile_buffer]
                     return HttpResponse(
                         render(rgb, mask, img_format=driver, **options),
                         content_type="image/{}".format(ext)
@@ -557,6 +584,9 @@ class Export(TaskNestedView):
             raise exceptions.ValidationError(_("Both formula and bands parameters are required"))
 
         if formula and bands:
+            if bands == 'auto':
+                bands, _discard_ = get_auto_bands(task.orthophoto_bands, formula)
+
             try:
                 expr, _discard_ = lookup_formula(formula, bands)
             except ValueError as e:

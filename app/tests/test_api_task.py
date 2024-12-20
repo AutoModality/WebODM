@@ -114,13 +114,6 @@ class TestApiTask(BootTransactionTestCase):
             }, format="multipart")
             self.assertTrue(res.status_code == status.HTTP_400_BAD_REQUEST)
 
-            # Cannot create a task with just 1 image
-            res = client.post("/api/projects/{}/tasks/".format(project.id), {
-                'images': image1
-            }, format="multipart")
-            self.assertTrue(res.status_code == status.HTTP_400_BAD_REQUEST)
-            image1.seek(0)
-
             # Normal case with images[], name and processing node parameter
             res = client.post("/api/projects/{}/tasks/".format(project.id), {
                 'images': [image1, image2],
@@ -252,6 +245,12 @@ class TestApiTask(BootTransactionTestCase):
 
             # EPSG should be null
             self.assertTrue(task.epsg is None)
+
+            # Orthophoto bands field should be an empty list
+            self.assertEqual(len(task.orthophoto_bands), 0)
+
+            # Size should be zero
+            self.assertEqual(task.size, 0)
 
             # tiles.json, bounds, metadata should not be accessible at this point
             tile_types = ['orthophoto', 'dsm', 'dtm']
@@ -385,6 +384,15 @@ class TestApiTask(BootTransactionTestCase):
             res = client.get("/api/projects/{}/tasks/{}/assets/odm_orthophoto/odm_orthophoto.tif".format(project.id, task.id))
             self.assertTrue(res.status_code == status.HTTP_200_OK)
 
+             # Orthophoto bands field should be populated
+            self.assertEqual(len(task.orthophoto_bands), 4)
+
+            # Size should be updated
+            self.assertTrue(task.size > 0)
+
+            # The owner's used quota should have increased
+            self.assertTrue(task.project.owner.profile.used_quota_cached() > 0)
+
             # Can export orthophoto (when formula and bands are specified)
             res = client.post("/api/projects/{}/tasks/{}/orthophoto/export".format(project.id, task.id), {
                 'formula': 'NDVI'
@@ -489,6 +497,10 @@ class TestApiTask(BootTransactionTestCase):
             self.assertEqual(metadata['algorithms'], [])
             self.assertEqual(metadata['color_maps'], [])
 
+            # Auto bands
+            self.assertEqual(metadata['auto_bands']['filter'], '')
+            self.assertEqual(metadata['auto_bands']['match'], None)
+
             # Address key is removed
             self.assertFalse('address' in metadata)
 
@@ -523,6 +535,10 @@ class TestApiTask(BootTransactionTestCase):
             self.assertTrue(len(metadata['algorithms']) > 0)
             self.assertTrue(len(metadata['color_maps']) > 0)
 
+            # Auto band is populated
+            self.assertEqual(metadata['auto_bands']['filter'], '')
+            self.assertEqual(metadata['auto_bands']['match'], None)
+
             # Algorithms have valid keys
             for k in ['id', 'filters', 'expr', 'help']:
                 for a in metadata['algorithms']:
@@ -548,6 +564,10 @@ class TestApiTask(BootTransactionTestCase):
             # Min/max values have been replaced
             self.assertEqual(metadata['statistics']['1']['min'], algos['VARI']['range'][0])
             self.assertEqual(metadata['statistics']['1']['max'], algos['VARI']['range'][1])
+
+            # Formula can be set to auto
+            res = client.get("/api/projects/{}/tasks/{}/orthophoto/metadata?formula=VARI&bands=auto".format(project.id, task.id))
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
 
             tile_path = {
                 'orthophoto': '17/32042/46185',
@@ -657,7 +677,9 @@ class TestApiTask(BootTransactionTestCase):
                 ("orthophoto", "formula=VARI&bands=RGB", status.HTTP_200_OK),
                 ("orthophoto", "formula=VARI&bands=invalid", status.HTTP_400_BAD_REQUEST),
                 ("orthophoto", "formula=invalid&bands=RGB", status.HTTP_400_BAD_REQUEST),
-
+                ("orthophoto", "formula=NDVI&bands=auto", status.HTTP_200_OK),
+                ("orthophoto", "formula=NDVI&bands=auto", status.HTTP_200_OK),
+                
                 ("orthophoto", "formula=NDVI&bands=RGN&color_map=rdylgn&rescale=-1,1", status.HTTP_200_OK),
                 ("orthophoto", "formula=NDVI&bands=RGN&color_map=rdylgn&rescale=1,-1", status.HTTP_200_OK),
 
@@ -671,7 +693,7 @@ class TestApiTask(BootTransactionTestCase):
 
             for k in algos:
                 a = algos[k]
-                filters = get_camera_filters_for(a)
+                filters = get_camera_filters_for(a['expr'])
 
                 for f in filters:
                     params.append(("orthophoto", "formula={}&bands={}&color_map=rdylgn".format(k, f), status.HTTP_200_OK))
@@ -743,6 +765,19 @@ class TestApiTask(BootTransactionTestCase):
             self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
             res = other_client.post("/api/projects/{}/tasks/{}/3d/scene".format(project.id, task.id), json.dumps({ "type": "Potree", "modified": True }), content_type="application/json")
             self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+            # Original owner enables edits
+            res = client.patch("/api/projects/{}/tasks/{}/".format(project.id, task.id), {
+                'public': True,
+                'public_edit': True
+            })
+            self.assertTrue(res.status_code == status.HTTP_200_OK)
+            
+            # He can now save scene / change camera view
+            res = other_client.post("/api/projects/{}/tasks/{}/3d/cameraview".format(project.id, task.id), json.dumps({ "position": [0,0,0], "target": [0,0,0] }), content_type="application/json")
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+            res = other_client.post("/api/projects/{}/tasks/{}/3d/scene".format(project.id, task.id), json.dumps({ "type": "Potree", "modified": True }), content_type="application/json")
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
 
             # User logs out
             other_client.logout()
@@ -923,6 +958,9 @@ class TestApiTask(BootTransactionTestCase):
             # EPSG should be populated
             self.assertEqual(task.epsg, 32615)
 
+            # Orthophoto bands should not be populated
+            self.assertEqual(len(task.orthophoto_bands), 0)
+
             # Can access only tiles of available assets
             res = client.get("/api/projects/{}/tasks/{}/dsm/tiles.json".format(project.id, task.id))
             self.assertEqual(res.status_code, status.HTTP_200_OK)
@@ -944,6 +982,7 @@ class TestApiTask(BootTransactionTestCase):
         self.assertTrue(res.data['success'])
         new_task_id = res.data['task']['id']
         self.assertNotEqual(res.data['task']['id'], task.id)
+        self.assertEqual(res.data['task']['size'], task.size)
         
         new_task = Task.objects.get(pk=new_task_id)
 
@@ -1117,10 +1156,6 @@ class TestApiTask(BootTransactionTestCase):
             self.assertEqual(res.status_code, status.HTTP_200_OK)
             self.assertEqual(res.data['success'], True)
             image1.seek(0)
-
-            # Cannot commit with a single image
-            res = client.post("/api/projects/{}/tasks/{}/commit/".format(project.id, task.id))
-            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
             # And second image
             res = client.post("/api/projects/{}/tasks/{}/upload/".format(project.id, task.id), {

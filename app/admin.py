@@ -10,10 +10,13 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
 from guardian.admin import GuardedModelAdmin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.models import User
 
 from app.models import PluginDatum
 from app.models import Preset
 from app.models import Plugin
+from app.models import Profile
 from app.plugins import get_plugin_by_name, enable_plugin, disable_plugin, delete_plugin, valid_plugin, \
     get_plugins_persistent_path, clear_plugins_cache, init_plugins
 from .models import Project, Task, Setting, Theme
@@ -23,16 +26,23 @@ from webodm import settings
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.utils.translation import gettext_lazy as _, gettext
 
-admin.site.register(Project, GuardedModelAdmin)
+
+class ProjectAdmin(GuardedModelAdmin):
+    list_display = ('id', 'name', 'owner', 'created_at', 'tasks_count', 'tags')
+    list_filter = ('owner',)
+    search_fields = ('id', 'name', 'owner__username')
+
+
+admin.site.register(Project, ProjectAdmin)
 
 
 class TaskAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return False
 
-    list_display = ('id', 'project', 'processing_node', 'created_at', 'status', 'last_error')
+    list_display = ('id', 'name', 'project', 'processing_node', 'created_at', 'status', 'last_error')
     list_filter = ('status', 'project',)
-    search_fields = ('id', 'project__name')
+    search_fields = ('id', 'name', 'project__name')
 
 
 admin.site.register(Task, TaskAdmin)
@@ -253,3 +263,24 @@ class PluginAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Plugin, PluginAdmin)
+
+class ProfileInline(admin.StackedInline):
+    model = Profile
+    can_delete = False
+
+    # Hide "quota" profile field when adding (show during editing)
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            fields = list(super().get_fields(request, obj))
+            fields.remove('quota')
+            return fields
+        else:
+            return super().get_fields(request, obj)
+
+class UserAdmin(BaseUserAdmin):
+    inlines = [ProfileInline]
+
+
+# Re-register UserAdmin
+admin.site.unregister(User)
+admin.site.register(User, UserAdmin)

@@ -110,7 +110,7 @@ def build_plugins():
                     # Create entry configuration
                     entry = {}
                     for e in plugin.build_jsx_components():
-                        entry[os.path.splitext(os.path.basename(e))[0]] = [os.path.join('.', e)]
+                        entry[os.path.splitext(os.path.basename(e))[0]] = ['./' + e]
                     wpc_content = tmpl.substitute({
                         'entry_json': json.dumps(entry)
                     })
@@ -210,9 +210,12 @@ def get_plugins():
                         module = importlib.import_module("plugins.{}".format(dir))
 
                     plugin = (getattr(module, "Plugin"))()
-                except (ImportError, AttributeError):
-                    module = importlib.import_module("coreplugins.{}".format(dir))
-                    plugin = (getattr(module, "Plugin"))()
+                except (ImportError, AttributeError) as plugin_error:
+                    try:
+                        module = importlib.import_module("coreplugins.{}".format(dir))
+                        plugin = (getattr(module, "Plugin"))()
+                    except (ImportError, AttributeError) as coreplugin_error:
+                        raise coreplugin_error from plugin_error
 
                 # Check version
                 manifest = plugin.get_manifest()
@@ -237,7 +240,7 @@ def get_plugins():
 
                 plugins.append(plugin)
             except Exception as e:
-                logger.warning("Failed to instantiate plugin {}: {}".format(dir, e))
+                logger.warning("Failed to instantiate plugin {}: {}: {}".format(dir, e, e.__cause__))
 
     return plugins
 
@@ -273,7 +276,7 @@ def get_plugin_by_name(name, only_active=True, refresh_cache_if_none=False):
     else:
         return res
 
-def get_current_plugin():
+def get_current_plugin(only_active=False):
     """
     When called from a python module inside a plugin's directory,
     it returns the plugin that this python module belongs to
@@ -289,7 +292,7 @@ def get_current_plugin():
         parts = relp.split(os.sep)
         if len(parts) > 0:
             plugin_name = parts[0]
-            return get_plugin_by_name(plugin_name, only_active=False)
+            return get_plugin_by_name(plugin_name, only_active=only_active)
 
     return None
 
