@@ -19,6 +19,7 @@ import rasterio
 from shutil import copyfile
 import requests
 from PIL import Image
+Image.MAX_IMAGE_PIXELS = 4096000000
 from django.contrib.gis.gdal import GDALRaster
 from django.contrib.gis.gdal import OGRGeometry
 from django.contrib.gis.geos import GEOSGeometry
@@ -159,7 +160,7 @@ def resize_image(image_path, resize_to, done=None):
         os.rename(resized_image_path, image_path)
 
         logger.info("Resized {} to {}x{}".format(image_path, resized_width, resized_height))
-    except (IOError, ValueError, struct.error) as e:
+    except (IOError, ValueError, struct.error, Image.DecompressionBombError) as e:
         logger.warning("Cannot resize {}: {}.".format(image_path, str(e)))
         if done is not None:
             done()
@@ -411,7 +412,15 @@ class Task(models.Model):
                 points = j.get('point_cloud_statistics', {}).get('stats', {}).get('statistic', [{}])[0].get('count')
             else:
                 points = j.get('reconstruction_statistics', {}).get('reconstructed_points_count')
-                        
+
+            spatial_refs = []
+            if j.get('reconstruction_statistics', {}).get('has_gps'):
+                spatial_refs.append("gps")
+            if j.get('reconstruction_statistics', {}).get('has_gcp') and 'average_error' in j.get('gcp_errors', {}):
+                spatial_refs.append("gcp")
+            if 'align' in j:
+                spatial_refs.append("alignment")
+
             return {
                 'pointcloud':{
                     'points': points,
@@ -420,6 +429,7 @@ class Task(models.Model):
                 'area': j.get('processing_statistics', {}).get('area'),
                 'start_date': j.get('processing_statistics', {}).get('start_date'),
                 'end_date': j.get('processing_statistics', {}).get('end_date'),
+                'spatial_refs': spatial_refs,
             }
         else:
             return {}
@@ -596,7 +606,7 @@ class Task(models.Model):
 
                             fd.write(chunk)
 
-                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, ReadTimeoutError) as e:
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, ReadTimeoutError, requests.exceptions.MissingSchema) as e:
                     raise NodeServerError(e)
 
         self.refresh_from_db()
@@ -605,7 +615,9 @@ class Task(models.Model):
             self.extract_assets_and_complete()
         except zipfile.BadZipFile:
             raise NodeServerError(gettext("Invalid zip file"))
-
+        except NotImplementedError:
+            raise NodeServerError(gettext("Unsupported compression method"))
+        
         images_json = self.assets_path("images.json")
         if os.path.exists(images_json):
             try:
@@ -970,6 +982,7 @@ class Task(models.Model):
 
         if is_backup:
             self.read_backup_file()
+            self.import_url = ""
         else:
             self.console += gettext("Done!") + "\n"
         
@@ -1239,7 +1252,31 @@ class Task(models.Model):
     def get_image_path(self, filename):
         p = self.task_path(filename)
         return path_traversal_check(p, self.task_path())
+
+    def set_alignment_file_from(self, align_task):
+        tp = self.task_path()
+        if not os.path.exists(tp):
+            os.makedirs(tp, exist_ok=True)
+
+        alignment_file = align_task.assets_path(self.ASSETS_MAP['georeferenced_model.laz'])
+        dst_file = self.task_path("align.laz")
+
+        if os.path.exists(dst_file):
+            os.unlink(dst_file)
+
+        if os.path.exists(alignment_file):
+            try:
+                os.link(alignment_file, dst_file)
+            except:
+                shutil.copy(alignment_file, dst_file)
+        else:
+            logger.warn("Cannot set alignment file for {}, {} does not exist".format(self, alignment_file))
     
+    def get_check_file_asset_path(self, asset):
+        file = self.assets_path(self.ASSETS_MAP[asset])
+        if isinstance(file, str) and os.path.isfile(file):
+            return file
+
     def handle_images_upload(self, files):
         uploaded = {}
         for file in files:

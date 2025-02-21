@@ -7,6 +7,7 @@ import Utils from '../classes/Utils';
 import Workers from '../classes/Workers';
 import ErrorMessage from './ErrorMessage';
 import ExportAssetPanel from './ExportAssetPanel';
+import PluginsAPI from '../classes/plugins/API';
 import $ from 'jquery';
 import { _, interpolate } from '../classes/gettext';
 
@@ -15,14 +16,16 @@ export default class LayersControlLayer extends React.Component {
       layer: null,
       expanded: false,
       map: null,
-      overlay: false
+      overlay: false,
+      separator: false,
   };
   static propTypes = {
     layer: PropTypes.object.isRequired,
     expanded: PropTypes.bool,
     map: PropTypes.object.isRequired,
-    overlay: PropTypes.bool
-  }
+    overlay: PropTypes.bool,
+    separator: PropTypes.bool
+  };
 
   constructor(props){
     super(props);
@@ -64,6 +67,7 @@ export default class LayersControlLayer extends React.Component {
         hillshade: params.hillshade || "",
         histogramLoading: false,
         exportLoading: false,
+        side: false,
         error: ""
     };
     this.rescale = params.rescale || "";
@@ -73,14 +77,46 @@ export default class LayersControlLayer extends React.Component {
       return this.props.layer._url || "";
   }
 
+  componentDidMount(){
+    PluginsAPI.Map.onMapTypeChanged(this.handleMapTypeChange);
+    PluginsAPI.Map.onSideBySideChanged(this.handleSideBySideChange);
+  }
+
+  handleMapTypeChange = (type, autoExpand) => {
+    if (this.meta.type !== undefined){
+        const visible = this.meta.type === type;
+        const expanded = visible && autoExpand;
+        this.setState({visible, expanded});
+    }
+  }
+
+  handleSideBySideChange = (layer, side) => {
+    // Toggle this layer's side off if it was previously sided
+    // when another layer is set to side
+    if (this.props.layer !== layer && this.state.side && side){
+        setTimeout(() => {
+            let visible = this.state.visible;
+            if (this.wasInvisibleOnSideClick){
+                visible = false;
+                this.wasInvisibleOnSideClick = false;
+            }
+    
+            this.setState({ side: false, visible });
+            PluginsAPI.Map.sideBySideChanged(this.props.layer, false);
+        }, 0);
+    }
+  }
+
   componentDidUpdate(prevProps, prevState){
     const { layer } = this.props;
 
     if (prevState.visible !== this.state.visible){
         if (this.state.visible){
-            layer.addTo(this.map);
+            if (layer.show) layer.show(); 
+            else if (!this.map.hasLayer(layer)) layer.addTo(this.map);
         }else{
-            this.map.removeLayer(layer);
+            if (layer.hide) layer.hide();
+            else this.map.removeLayer(layer);
         }
     }
 
@@ -94,7 +130,7 @@ export default class LayersControlLayer extends React.Component {
     }
 
     if (prevProps.expanded !== this.props.expanded){
-        this.state.expanded = this.props.expanded;
+        this.setState({expanded: this.props.expanded});
     }
   }
 
@@ -108,6 +144,9 @@ export default class LayersControlLayer extends React.Component {
         this.exportReq.abort();
         this.exportReq = null;
     }
+
+    PluginsAPI.Map.offSideBySideChanged(this.handleSideBySideChange);
+    PluginsAPI.Map.offMapTypeChanged(this.handleMapTypeChange);
   }
 
   handleZoomToClick = () => {
@@ -119,6 +158,32 @@ export default class LayersControlLayer extends React.Component {
     this.map.fitBounds(bounds);
 
     if (layer.getPopup()) layer.openPopup();
+  }
+
+  handleSideClick = () => {
+    let { side, visible } = this.state;
+
+    if (!side){
+        side = true;
+        if (!visible){
+            visible = true;
+            this.wasInvisibleOnSideClick = true;
+        }
+    }else{
+        side = false;
+        if (this.wasInvisibleOnSideClick){
+            visible = false;
+            this.wasInvisibleOnSideClick = false;
+        }
+    }
+
+    this.setState({ side, visible });
+    PluginsAPI.Map.sideBySideChanged(this.props.layer, side);
+  }
+
+  sideIcon = () => {
+    if (!this.state.side) return "fa-divide fa-rotate-90";
+    else return "fa-chevron-right";
   }
 
   handleLayerClick = () => {
@@ -300,8 +365,8 @@ export default class LayersControlLayer extends React.Component {
 
     return (<div className="layers-control-layer">
         <div className="layer-control-title">
-            {!this.props.overlay ? <ExpandButton bind={[this, 'expanded']} /> : <div className="paddingSpace"></div>}<Checkbox bind={[this, 'visible']}/>
-            <a title={meta.name} className="layer-label" href="javascript:void(0);" onClick={this.handleLayerClick}><i className={"layer-icon " + (meta.icon || "fa fa-vector-square fa-fw")}></i><div className="layer-title">{meta.name}</div></a> <a className="layer-action" href="javascript:void(0)" onClick={this.handleZoomToClick}><i title={_("Zoom To")} className="fa fa-expand"></i></a>
+            {!this.props.overlay ? <ExpandButton bind={[this, 'expanded']} className="expand-layer" /> : <div className="paddingSpace"></div>}<Checkbox bind={[this, 'visible']}/>
+            <a title={meta.name} className="layer-label" href="javascript:void(0);" onClick={this.handleLayerClick}><i className={"layer-icon " + (meta.icon || "fa fa-vector-square fa-fw")}></i><div className="layer-title">{meta.name}</div></a> {meta.raster ? <a className="layer-action" href="javascript:void(0)" onClick={this.handleSideClick}><i title={_("Side By Side")} className={"fa fa-fw " + this.sideIcon()}></i></a> : ""}<a className="layer-action" href="javascript:void(0)" onClick={this.handleZoomToClick}><i title={_("Zoom To")} className="fa fa-expand"></i></a>
         </div>
 
         {this.state.expanded ?
@@ -374,6 +439,8 @@ export default class LayersControlLayer extends React.Component {
                             asset={this.asset}
                             exportParams={this.getLayerParams}
                             dropUp />
+            
+            {this.props.separator ? <hr className="layer-separator" /> : ""}
         </div> : ""}
     </div>);
 
